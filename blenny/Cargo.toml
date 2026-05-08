@@ -12,3 +12,5 @@ inventory = "0.3"
 tera = "1"
 rust-embed = "8"
 notify = { version = "6", optional = true }
+tokio-stream = "0.1"
+async-stream = "0.3"

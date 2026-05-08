@@ -1,4 +1,4 @@
-use crate::{BlennyModule, Conduit, blenny_module};
+use crate::{BlennyModule, Conduit, TransportHub, blenny_module};
 use axum::{Extension, Router, response::Html};
 use std::sync::Arc;
 
@@ -16,8 +16,15 @@ impl BlennyModule for AuthModule {
     }
 }
 
-async fn login_form(Extension(conduit): Extension<Arc<Conduit>>) -> Html<String> {
-    let ctx = tera::Context::new();
+async fn login_form(
+    Extension(conduit): Extension<Arc<Conduit>>,
+    Extension(hub): Extension<Arc<TransportHub>>,
+) -> Html<String> {
+    // Broadcast a live-update message.
+    hub.broadcast_html("<p>Someone visited the login page!</p>");
+
+    let mut ctx = tera::Context::new();
+    ctx.insert("username", "Nathan");
     let html = conduit
         .render("auth/login", &ctx)
         .unwrap_or_else(|e| format!("Template error: {e}"));

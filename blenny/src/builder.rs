@@ -1,16 +1,21 @@
-use crate::Conduit; // re‑exported in lib.rs
+// blenny/src/builder.rs
+use crate::Conduit;
 use crate::module::{BlennyModule, ModuleRegistration};
+use crate::transport::{TransportHub, sse_handler};
 use axum::Router;
-use std::sync::Arc;
+use std::sync::Arc; // new
 
 pub struct BlennyBuilder {
     pub conduit: Option<Arc<Conduit>>,
-    // transport_hub will go here later
+    pub transport_hub: Arc<TransportHub>, // always present
 }
 
 impl BlennyBuilder {
     pub fn new() -> Self {
-        BlennyBuilder { conduit: None }
+        BlennyBuilder {
+            conduit: None,
+            transport_hub: Arc::new(TransportHub::new()), // new
+        }
     }
 
     pub fn with_conduit(mut self, conduit: Conduit) -> Self {
@@ -19,6 +24,7 @@ impl BlennyBuilder {
     }
 
     pub fn with_default_transports(self) -> Self {
+        // Placeholder for WebSocket sidecar
         self
     }
 
@@ -36,10 +42,16 @@ impl BlennyBuilder {
         }
         println!("Registered {} module(s).", module_count);
 
-        // Health check
+        // Core routes
         router = router.route("/health", axum::routing::get(|| async { "OK" }));
 
-        // Apply layers **last**
+        // Add SSE endpoint and inject TransportHub
+        let hub = self.transport_hub.clone();
+        router = router
+            .route("/sse", axum::routing::get(sse_handler))
+            .layer(axum::Extension(hub));
+
+        // Apply Conduit layer last (if present)
         if let Some(conduit) = &self.conduit {
             router = router.layer(axum::Extension(conduit.clone()));
         }
