@@ -1,0 +1,8 @@
+@host = http://localhost:8081
+
+### Health check
+GET {{host}}/health
+
+### Module auto‑discovery check (once modules exist)
+GET {{host}}/dashboard
+HX-Request: true

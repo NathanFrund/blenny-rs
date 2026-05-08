@@ -1,0 +1,10 @@
+{
+  "rust-analyzer.cargo.features": ["hot-reload"], // when you add that feature
+  "rust-analyzer.inlayHints.typeHints.enable": false,
+  "rust-analyzer.inlayHints.parameterHints.enable": true,
+  "errorLens.enabledDiagnosticLevels": ["error", "warning"],
+  "errorLens.enabledOnSave": true,
+  "editor.formatOnSave": true,
+  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.diagnostics.disabled": ["E0308"]
+}
