@@ -2,6 +2,7 @@ extern crate self as blenny;
 
 pub mod builder;
 pub mod conduit;
+pub mod embedded;
 pub mod module;
 pub mod modules;
 pub mod transport;
