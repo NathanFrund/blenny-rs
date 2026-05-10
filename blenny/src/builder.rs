@@ -1,7 +1,7 @@
 // blenny/src/builder.rs
 use crate::{AppState, Conduit};
 use crate::module::{BlennyModule, ModuleRegistration};
-use crate::transport::TransportHub;
+use crate::transport::{TransportHub, sse_handler};
 use crate::auth::{AuthProvider, AuthRegistration};   // NEW
 use axum::Router;
 use std::sync::Arc; // new
@@ -86,6 +86,7 @@ impl BlennyBuilder {
 
         // Public routes
         router = router.route("/health", axum::routing::get(|| async { "OK" }));
+        router = router.route("/sse", axum::routing::get(sse_handler));
 
         // Inject AppState as an extension
         router = router.layer(axum::Extension(app_state.clone()));
