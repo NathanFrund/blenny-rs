@@ -1,13 +1,19 @@
-use axum::{response::Html, routing::get, Extension, Router};
+use crate::{AppState, BlennyModule, blenny_module, transport::ServerMessage};
+use axum::{
+    Extension, Router,
+    response::{Html, IntoResponse},
+    routing::get,
+};
 use std::sync::Arc;
-use crate::{blenny_module, BlennyModule, AppState, transport::ServerMessage};
 
 #[derive(Default)]
 #[blenny_module]
 pub struct TestBroadcastModule;
 
 impl BlennyModule for TestBroadcastModule {
-    fn name(&self) -> &'static str { "TestBroadcast" }
+    fn name(&self) -> &'static str {
+        "TestBroadcast"
+    }
 
     fn register_routes(&self, router: Router) -> Router {
         router
@@ -25,12 +31,33 @@ async fn test_page() -> impl axum::response::IntoResponse {
 async fn trigger_broadcast(
     Extension(state): Extension<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> impl axum::response::IntoResponse {
-    let category = params.get("category").cloned().unwrap_or_else(|| "ui".to_string());
+) -> impl IntoResponse {
+    let category = params
+        .get("category")
+        .cloned()
+        .unwrap_or_else(|| "ui".to_string());
+    let ts = chrono::Local::now().format("%H:%M:%S").to_string();
+
+    let (html, signals) = match category.as_str() {
+        "data" => (
+            None,
+            Some(format!(
+                r#"{{"stock":"BLEN","price":{},"ts":"{}"}}"#,
+                (42).to_string(),
+                ts
+            )),
+        ),
+        "command" => (Some(format!("console.log('command at {}')", ts)), None),
+        _ => (
+            Some(format!("<p>Broadcasted {} at {}</p>", category, ts)),
+            None,
+        ),
+    };
+
     state.hub.broadcast(ServerMessage {
         category: category.clone(),
-        html: Some(format!("<p>Broadcasted {category} at {}</p>", chrono::Local::now().format("%H:%M:%S"))),
-        signals: None,
+        html,
+        signals,
     });
-    format!("Sent {category}")
+    format!("Sent {}", category)
 }

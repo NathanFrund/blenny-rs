@@ -1,10 +1,11 @@
 // blenny/src/builder.rs
-use crate::{AppState, Conduit};
+use crate::auth::{AuthProvider, AuthRegistration};
+use crate::encoder::TransportEncoder;
 use crate::module::{BlennyModule, ModuleRegistration};
 use crate::transport::{TransportHub, sse_handler};
-use crate::auth::{AuthProvider, AuthRegistration};   // NEW
+use crate::{AppState, Conduit};
 use axum::Router;
-use std::sync::Arc; // new
+use std::sync::Arc;
 
 pub struct BlennyBuilder {
     pub conduit: Option<Arc<Conduit>>,
@@ -58,10 +59,22 @@ impl BlennyBuilder {
         }
 
         // ---- Build AppState ----
+        let encoder: Arc<dyn TransportEncoder> = {
+            #[cfg(feature = "datastar-sse")]
+            {
+                Arc::new(crate::encoder::DatastarEncoder)
+            }
+            #[cfg(not(feature = "datastar-sse"))]
+            {
+                Arc::new(crate::encoder::StandardEncoder)
+            }
+        };
+
         let app_state = Arc::new(AppState::new(
             self.conduit.clone(),
             self.transport_hub.clone(),
             auth_provider.clone(),
+            encoder,
         ));
 
         // ---- Initialize modules, register routes, and keep them alive ----

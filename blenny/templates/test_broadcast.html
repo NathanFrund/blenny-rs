@@ -1,51 +1,100 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-  <meta charset="UTF-8">
-  <title>SSE Intent Test</title>
-</head>
-<body>
-  <h1>SSE Connection Intents Test</h1>
+  <head>
+    <meta charset="UTF-8" />
+    <title>SSE Intent Test</title>
+  </head>
+  <body>
+    <h1>SSE Connection Intents Test</h1>
 
-  <label for="intent">SSE Intent filter:</label>
-  <input id="intent" type="text" value="">
-  <button onclick="connectSSE()">Connect SSE</button>
-  <button onclick="disconnectSSE()">Disconnect</button>
-  <br/><br/>
+    <label for="intent">SSE Intent filter:</label>
+    <input id="intent" type="text" value="" />
+    <button onclick="connectSSE()">Connect SSE</button>
+    <button onclick="disconnectSSE()">Disconnect</button>
+    <br /><br />
 
-  <button onclick="trigger('ui')">Send UI message</button>
-  <button onclick="trigger('data')">Send Data message</button>
-  <button onclick="trigger('command')">Send Command message</button>
-  <button onclick="trigger('notification')">Send Notification message</button>
-  <br/><br/>
+    <button onclick="trigger('ui')">Send UI message</button>
+    <button onclick="trigger('data')">Send Data message</button>
+    <button onclick="trigger('command')">Send Command message</button>
+    <button onclick="trigger('notification')">Send Notification message</button>
+    <br /><br />
 
-  <div id="log" style="border:1px solid #ccc; height:200px; overflow-y:scroll; padding:5px;"></div>
+    <div
+      id="log"
+      style="
+        border: 1px solid #ccc;
+        height: 200px;
+        overflow-y: scroll;
+        padding: 5px;
+      "
+    ></div>
 
-  <script>
-    let eventSource = null;
-    function connectSSE() {
-      const intent = document.getElementById('intent').value.trim();
-      const url = intent ? `/sse?intent=${encodeURIComponent(intent)}` : '/sse';
-      if (eventSource) eventSource.close();
-      eventSource = new EventSource(url);
-      eventSource.onmessage = (e) => {
-        const log = document.getElementById('log');
-        log.innerHTML += '<div style="color:green">' + e.data + '</div>';
-      };
-      log.innerHTML += '<div><b>Connected to ' + url + '</b></div>';
-    }
+    <script>
+      console.log("Test page loaded");
 
-    function disconnectSSE() {
-      if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-        document.getElementById('log').innerHTML += '<div><b>Disconnected</b></div>';
+      let eventSource = null;
+      const logElement = document.getElementById("log");
+
+      function appendMessage(text, color) {
+        color = color || "green";
+        console.log("[SSE]", text);
+        var div = document.createElement("div");
+        div.style.color = color;
+        div.textContent = text;
+        logElement.appendChild(div);
       }
-    }
 
-    async function trigger(category) {
-      await fetch(`/trigger-broadcast?category=${category}`);
-    }
-  </script>
-</body>
+      function connectSSE() {
+        var intent = document.getElementById("intent").value.trim();
+        var url = intent ? "/sse?intent=" + encodeURIComponent(intent) : "/sse";
+
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+
+        eventSource = new EventSource(url);
+
+        eventSource.onopen = function () {
+          appendMessage("Connected to " + url, "black");
+        };
+
+        eventSource.onmessage = function (e) {
+          appendMessage(e.data);
+        };
+
+        eventSource.addEventListener("datastar-patch-elements", function (e) {
+          appendMessage(e.data);
+        });
+
+        eventSource.addEventListener("datastar-patch-signals", function (e) {
+          appendMessage(e.data);
+        });
+
+        eventSource.addEventListener("datastar-execute-script", function (e) {
+          appendMessage(e.data);
+        });
+
+        eventSource.addEventListener("blenny-notification", function (e) {
+          appendMessage("NOTIFICATION: " + e.data, "blue");
+        });
+
+        eventSource.onerror = function () {
+          appendMessage("Connection error", "red");
+        };
+      }
+
+      function disconnectSSE() {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+          appendMessage("Disconnected", "red");
+        }
+      }
+
+      function trigger(category) {
+        fetch("/trigger-broadcast?category=" + category);
+      }
+    </script>
+  </body>
 </html>

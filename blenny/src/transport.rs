@@ -82,12 +82,10 @@ impl TransportHub {
     /// Returns a receiver that will receive future messages.
     pub fn subscribe_topic(&self, topic: &str) -> broadcast::Receiver<String> {
         let mut topics = self.topics.write().unwrap();
-        let sender = topics
-            .entry(topic.to_string())
-            .or_insert_with(|| {
-                let (tx, _rx) = broadcast::channel::<String>(64);
-                tx
-            });
+        let sender = topics.entry(topic.to_string()).or_insert_with(|| {
+            let (tx, _rx) = broadcast::channel::<String>(64);
+            tx
+        });
         sender.subscribe()
     }
 }
@@ -99,29 +97,28 @@ pub async fn sse_handler(
     Extension(state): Extension<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>> {
-    // Parse intents: if not provided, do not filter (send all).
+    // Determine if we should apply server‑side intent filtering.
+    let do_server_filter = !state.encoder.filters_client_side();
     let intent_param = params.get("intent");
-    let do_filter = intent_param.is_some(); // only filter when ?intent is present
+    let do_filter = intent_param.is_some();           // filter only if ?intent is present
     let intents: HashSet<String> = intent_param
         .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
         .unwrap_or_default();
 
     let mut rx = state.hub.subscribe();
+
     let stream = async_stream::stream! {
         loop {
             match rx.recv().await {
                 Ok(msg) => {
-                    // Forward if no filter, or if category matches.
-                    if !do_filter || intents.contains(&msg.category) {
-                        let data = if let Some(html) = msg.html {
-                            html
-                        } else if let Some(signals) = msg.signals {
-                            signals
-                        } else {
-                            continue;
-                        };
-                        yield Ok(Event::default().data(data));
+                    println!("SSE handler got message: {:?}", msg);
+                    // Apply server‑side filter only if the encoder doesn't handle it
+                    // AND the client requested filtering via ?intent parameter.
+                    if do_server_filter && do_filter && !intents.contains(&msg.category) {
+                        continue;
                     }
+                    let event = state.encoder.to_event(&msg);
+                    yield Ok(event);
                 }
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(broadcast::error::RecvError::Closed) => break,

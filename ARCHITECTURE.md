@@ -183,7 +183,7 @@ blenny-rs/
 | Service bundle (`AppState`)                              | ✅ Implemented |
 | Topic‑based pub/sub for inter‑module messaging           | ✅ Implemented |
 | Connection intents (message filtering)                   | ✅ Implemented   |
-| Pluggable transport encoders                             | ⬜ Planned     |
+| Pluggable transport encoders                             | ✅ Implemented   |
 | Multi‑layer configuration                                | ⬜ Planned     |
 | Anti‑fragile middleware                                  | ⬜ Planned     |
 | Direct per‑user messaging                                | ⬜ Planned     |
