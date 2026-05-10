@@ -2,7 +2,8 @@ use axum::{
     extract::Extension,
     response::sse::{Event, KeepAlive, Sse},
 };
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio_stream::Stream;
@@ -20,14 +21,22 @@ pub struct ServerMessage {
 /// Shared hub that holds the broadcast channel for real‑time messages.
 #[derive(Clone)]
 pub struct TransportHub {
+    // Global client broadcast (SSE, future WS)
     tx: broadcast::Sender<ServerMessage>,
+    // Topic‑based channels for inter‑module messaging
+    topics: Arc<RwLock<HashMap<String, broadcast::Sender<String>>>>,
 }
 
 impl TransportHub {
     pub fn new() -> Self {
         let (tx, _rx) = broadcast::channel::<ServerMessage>(256);
-        TransportHub { tx }
+        TransportHub {
+            tx,
+            topics: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
+
+    // ---------- global client broadcast ----------
 
     /// Subscribe to the broadcast (call from SSE/WS handlers).
     pub fn subscribe(&self) -> broadcast::Receiver<ServerMessage> {
@@ -55,6 +64,31 @@ impl TransportHub {
     /// Broadcast a generic ServerMessage.
     pub fn broadcast(&self, msg: ServerMessage) {
         let _ = self.tx.send(msg);
+    }
+
+    // ---------- topic‑based pub/sub ----------
+
+    /// Publish a string message to a topic. Creates the topic if it doesn't exist.
+    pub fn publish(&self, topic: &str, message: String) {
+        let mut topics = self.topics.write().unwrap();
+        let sender = topics.entry(topic.to_string()).or_insert_with(|| {
+            let (tx, _rx) = broadcast::channel::<String>(64);
+            tx
+        });
+        let _ = sender.send(message);
+    }
+
+    /// Subscribe to a topic. If the topic doesn't exist yet, create its channel.
+    /// Returns a receiver that will receive future messages.
+    pub fn subscribe_topic(&self, topic: &str) -> broadcast::Receiver<String> {
+        let mut topics = self.topics.write().unwrap();
+        let sender = topics
+            .entry(topic.to_string())
+            .or_insert_with(|| {
+                let (tx, _rx) = broadcast::channel::<String>(64);
+                tx
+            });
+        sender.subscribe()
     }
 }
 

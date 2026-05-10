@@ -1,15 +1,24 @@
-use crate::{AppState, BlennyModule, auth::User, blenny_module};
 use axum::{Extension, Router, response::Html};
 use std::sync::Arc;
+use crate::{blenny_module, BlennyModule, AppState, auth::User};
 
 #[derive(Default)]
 #[blenny_module]
 pub struct DashboardModule;
 
 impl BlennyModule for DashboardModule {
-    fn name(&self) -> &'static str {
-        "Dashboard"
+    fn name(&self) -> &'static str { "Dashboard" }
+
+    fn initialize_module(&mut self, state: Arc<AppState>) {
+        let hub = state.hub.clone();
+        let mut rx = hub.subscribe_topic("dashboard.greeting");
+        tokio::spawn(async move {
+            while let Ok(msg) = rx.recv().await {
+                println!("Dashboard received: {msg}");
+            }
+        });
     }
+
     fn register_routes(&self, router: Router) -> Router {
         router.route("/dashboard", axum::routing::get(dashboard_handler))
     }

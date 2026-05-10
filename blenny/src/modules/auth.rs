@@ -62,6 +62,7 @@ async fn login_form(
 
 /// POST /login – processes credentials, sets JWT cookie, redirects.
 async fn login_submit(
+    Extension(state): Extension<Arc<AppState>>,
     Form(creds): Form<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
     let username = creds.get("username").map(|s| s.as_str()).unwrap_or("");
@@ -87,6 +88,9 @@ async fn login_submit(
             .same_site(axum_extra::extract::cookie::SameSite::Strict)
             .max_age(time::Duration::hours(24))
             .build();
+
+        // Publish a greeting to the dashboard topic
+        state.hub.publish("dashboard.greeting", format!("User {username} logged in"));
 
         let mut response = Redirect::to("/dashboard").into_response();
         response

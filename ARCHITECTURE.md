@@ -1,6 +1,3 @@
-Here is the complete updated `ARCHITECTURE.md` as a single markdown file. Copy it entirely and replace your current document.
-
-```markdown
 # Blenny‑rs – Design & Architecture Blueprint
 
 ## 🔮 Project Identity
@@ -30,6 +27,7 @@ Here is the complete updated `ARCHITECTURE.md` as a single markdown file. Copy i
 ## 🦀 Technical Architecture
 
 ### Workspace Layout
+
 ```
 
 blenny-rs/
@@ -50,7 +48,7 @@ blenny-rs/
 │ └── src/lib.rs
 └── app/ # (optional separate binary)
 
-````
+```
 
 ### Module System (Self‑Assembly)
 
@@ -67,7 +65,7 @@ blenny-rs/
 - **Modes:** `hot_reload(path)` (dev) reads from disk with file‑watching and debounced automatic reload; `frozen()` (prod) embeds templates via `rust-embed` into the binary.
 - **Extension stripping:** `render()` automatically appends `.tera` if the caller omits it, allowing modules to request `"auth/login"` while files are `auth/login.tera`.
 - **Template ownership:** Modules assign template names to their handlers (e.g., `login_handler.set_template("auth/login")`), keeping the handler logic reusable.
-- **Injection:** Conduit is stored as `Arc<Conduit>` and injected into the Axum router as an `Extension` (to be bundled into `AppState` soon). **Critical:** the `.layer(Extension)` must be applied *after* all routes are registered.
+- **Injection:** Conduit is stored as `Arc<Conduit>` and injected into the Axum router as an `Extension` (to be bundled into `AppState` soon). **Critical:** the `.layer(Extension)` must be applied _after_ all routes are registered.
 - **Handler usage:** `Extension(conduit): Extension<Arc<Conduit>>` extracts it.
 - **Future:** Static assets (CSS, JS, images) will be managed by a separate `StaticAssets` component that uses the same dev/prod switch (hot‑reload from disk, embedded in binary) and auto‑mounts a `/static/*` route. Conduit is only for templates.
 
@@ -124,6 +122,7 @@ blenny-rs/
 4. **Register Routes** – Each module’s `register_routes(router)` is called.
 5. **Start** – After routes are assembled and the server is about to listen, `start_module()` is called on every module (for background tasks, etc.).
 6. **Stop** – On graceful shutdown, `stop_module()` is called in reverse order.
+
 - **Robustness:** If `start_module` panics, the error is logged and the server continues (the module stays disabled). Shutdown timeout will be configurable (e.g., modules have 5s to stop gracefully, then are forced).
 
 ### Service Bundle (AppState)
@@ -135,7 +134,9 @@ blenny-rs/
       pub hub: Arc<TransportHub>,
       pub auth: Option<Arc<dyn AuthProvider>>,
   }
-````
+  ```
+
+```
 
 - This will be injected as `Extension<AppState>` (later `State<AppState>`). Handlers can extract the whole state or individual fields.
 - This refactor will happen right after authentication is stable.
@@ -169,27 +170,27 @@ blenny-rs/
 
 ## 🧭 Roadmap & Implementation Status
 
-| Feature                                                  | Status            |
-| -------------------------------------------------------- | ----------------- |
-| Self‑assembling modules (`#[blenny_module]`)             | ✅ Implemented    |
-| Conduit (Tera) rendering with hot‑reload                 | ✅ Implemented    |
-| Frozen production mode (embed templates)                 | ✅ Implemented    |
-| Real‑time SSE broadcast (`TransportHub`)                 | ✅ Implemented    |
-| Module life‑cycle hooks (`start/stop`)                   | 🟡 Partial        |
-| Pluggable authentication (JWT)                           | 🔨 In progress    |
-| Service bundle (`AppState`)                              | 🔜 After auth     |
-| Topic‑based pub/sub for inter‑module messaging           | 🔜 After AppState |
-| Connection intents (message filtering)                   | ⬜ Planned        |
-| Pluggable transport encoders                             | ⬜ Planned        |
-| Multi‑layer configuration                                | ⬜ Planned        |
-| Anti‑fragile middleware                                  | ⬜ Planned        |
-| Direct per‑user messaging                                | ⬜ Planned        |
-| Per‑route auth control (`#[public]` attribute)           | ⬜ Planned        |
-| WebSocket sidecar                                        | ⬜ Planned        |
-| Static asset management (CSS, JS)                        | ⬜ Planned        |
-| Unified error handling (`BlennyError`)                   | ⬜ Planned        |
-| SurrealDB integration                                    | ⬜ Planned        |
-| Dev‑friendly proc‑macro improvements (path prefix, etc.) | ⬜ Planned        |
+| Feature                                                  | Status         |
+| -------------------------------------------------------- | -------------- |
+| Self‑assembling modules (`#[blenny_module]`)             | ✅ Implemented |
+| Conduit (Tera) rendering with hot‑reload                 | ✅ Implemented |
+| Frozen production mode (embed templates)                 | ✅ Implemented |
+| Real‑time SSE broadcast (`TransportHub`)                 | ✅ Implemented |
+| Module life‑cycle hooks (`start/stop`)                   | ✅ Implemented |
+| Pluggable authentication (JWT)                           | ✅ Implemented |
+| Service bundle (`AppState`)                              | ✅ Implemented |
+| Topic‑based pub/sub for inter‑module messaging           | ✅ Implemented |
+| Connection intents (message filtering)                   | ⬜ Planned     |
+| Pluggable transport encoders                             | ⬜ Planned     |
+| Multi‑layer configuration                                | ⬜ Planned     |
+| Anti‑fragile middleware                                  | ⬜ Planned     |
+| Direct per‑user messaging                                | ⬜ Planned     |
+| Per‑route auth control (`#[public]` attribute)           | ⬜ Planned     |
+| WebSocket sidecar                                        | ⬜ Planned     |
+| Static asset management (CSS, JS)                        | ⬜ Planned     |
+| Unified error handling (`BlennyError`)                   | ⬜ Planned     |
+| SurrealDB integration                                    | ⬜ Planned     |
+| Dev‑friendly proc‑macro improvements (path prefix, etc.) | ⬜ Planned     |
 
 ## 📝 Key Architectural Decisions
 
@@ -221,7 +222,4 @@ Blenny‑rs is not a direct copy of the Smalltalk implementation; it’s a re‑
 - **Backpressure Awareness:** Documented the broadcast buffer behavior and future configurability.
 - **Error Handling Strategy:** Planned a unified `BlennyError` type.
 - **Static Assets Clarification:** Conduit is for templates only; a separate `StaticAssets` component will handle CSS/JS.
-
-```
-
 ```
