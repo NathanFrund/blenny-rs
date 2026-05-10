@@ -2,6 +2,7 @@
 use crate::Conduit;
 use crate::module::{BlennyModule, ModuleRegistration};
 use crate::transport::{TransportHub, sse_handler};
+use crate::auth::{AuthProvider, AuthRegistration};   // NEW
 use axum::Router;
 use std::sync::Arc; // new
 
@@ -30,17 +31,55 @@ impl BlennyBuilder {
 
     pub async fn serve(self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mut router = Router::new();
+        let mut modules: Vec<Box<dyn BlennyModule>> = Vec::new();
 
         // Auto‑discover modules
         println!("Discovering modules...");
         let mut module_count = 0;
         for reg in inventory::iter::<ModuleRegistration> {
-            let module: Box<dyn BlennyModule> = (reg.constructor)();
-            println!("  - registering module: {}", reg.name);
+            let mut module: Box<dyn BlennyModule> = (reg.constructor)();
+            if !module.is_enabled() {
+                println!("  - skipping disabled module: {}", reg.name);
+                continue;
+            }
+            println!("  - initializing module: {}", reg.name);
+
+            // Initialize module with dependencies
+            module.initialize_module(self.conduit.clone(), self.transport_hub.clone());
+
+            // Register routes
             router = module.register_routes(router);
+            modules.push(module);
             module_count += 1;
         }
         println!("Registered {} module(s).", module_count);
+
+        // ---- Auth discovery and layer application (NEW) ----
+        let mut auth_provider: Option<Arc<dyn AuthProvider>> = None;
+        for reg in inventory::iter::<AuthRegistration> {
+            if auth_provider.is_some() {
+                eprintln!("Warning: multiple auth providers found; using the first.");
+                break;
+            }
+            auth_provider = Some((reg.constructor)());
+            println!("Using auth provider: {}", reg.name);
+        }
+
+        // Apply protect layer BEFORE auth routes (so login is public)
+        if let Some(auth) = &auth_provider {
+            router = auth.protect_router(router);
+        }
+
+        // Merge auth routes (login, etc.) - they are unprotected
+        if let Some(auth) = &auth_provider {
+            router = router.merge(auth.auth_routes());
+        }
+        // ---- end auth ----
+
+        // Start all modules after routes are assembled
+        for module in &modules {
+            module.start_module();
+        }
 
         // Core routes
         router = router.route("/health", axum::routing::get(|| async { "OK" }));

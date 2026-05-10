@@ -7,6 +7,7 @@ edition = "2024"
 blenny-macros = { path = "../blenny-macros" }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
+tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 inventory = "0.3"
 tera = "1"
@@ -14,3 +15,7 @@ rust-embed = "8"
 notify = { version = "8", features = ["macos_kqueue"] }
 tokio-stream = "0.1"
 async-stream = "0.3"
+jsonwebtoken = "9.3"
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
