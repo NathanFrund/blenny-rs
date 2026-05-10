@@ -1,16 +1,16 @@
 use axum::{
+    Extension, Router,
     extract::{Form, Query},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Redirect},
     routing::{get, post},
-    Extension, Router,
 };
-use axum_extra::extract::cookie::{CookieJar, Cookie};
+use axum_extra::extract::cookie::{Cookie, CookieJar};
 use std::sync::Arc;
 
 use crate::app_state::AppState;
 use crate::auth::{AuthProvider, Claims, User};
-use crate::{blenny_auth_provider, blenny_module, BlennyModule};
+use crate::{BlennyModule, blenny_auth_provider, blenny_module};
 
 #[derive(Default)]
 #[blenny_module]
@@ -18,7 +18,9 @@ use crate::{blenny_auth_provider, blenny_module, BlennyModule};
 pub struct AuthModule;
 
 impl BlennyModule for AuthModule {
-    fn name(&self) -> &'static str { "Auth" }
+    fn name(&self) -> &'static str {
+        "Auth"
+    }
     fn register_routes(&self, router: Router) -> Router {
         // No extra routes; auth routes come from AuthProvider.
         router
@@ -34,10 +36,7 @@ impl AuthProvider for AuthModule {
     }
 
     fn protect_router(&self, router: Router) -> Router {
-        router.layer(
-            tower::ServiceBuilder::new()
-                .layer(axum::middleware::from_fn(validate_token))
-        )
+        router.layer(tower::ServiceBuilder::new().layer(axum::middleware::from_fn(validate_token)))
     }
 }
 
@@ -54,7 +53,11 @@ async fn login_form(
     if let Some(err) = params.get("error") {
         ctx.insert("error", err);
     }
-    Html(conduit.render("auth/login", &ctx).unwrap_or_else(|e| format!("Template error: {e}")))
+    Html(
+        conduit
+            .render("auth/login", &ctx)
+            .unwrap_or_else(|e| format!("Template error: {e}")),
+    )
 }
 
 /// POST /login – processes credentials, sets JWT cookie, redirects.
@@ -80,16 +83,15 @@ async fn login_submit(
         let cookie = Cookie::build(("blenny_token", token))
             .path("/")
             .http_only(true)
-            .secure(false)   // set true in production
+            .secure(false) // set true in production
             .same_site(axum_extra::extract::cookie::SameSite::Strict)
             .max_age(time::Duration::hours(24))
             .build();
 
         let mut response = Redirect::to("/dashboard").into_response();
-        response.headers_mut().insert(
-            "Set-Cookie",
-            cookie.to_string().parse().unwrap(),
-        );
+        response
+            .headers_mut()
+            .insert("Set-Cookie", cookie.to_string().parse().unwrap());
         response
     } else {
         // Redirect back to login with error (simple: just use a query param)
@@ -104,10 +106,9 @@ async fn logout() -> impl IntoResponse {
         .max_age(time::Duration::seconds(0))
         .build();
     let mut response = Redirect::to("/login").into_response();
-    response.headers_mut().insert(
-        "Set-Cookie",
-        cookie.to_string().parse().unwrap(),
-    );
+    response
+        .headers_mut()
+        .insert("Set-Cookie", cookie.to_string().parse().unwrap());
     response
 }
 
@@ -154,10 +155,9 @@ async fn validate_token(
             .max_age(time::Duration::seconds(0))
             .build();
         let mut response = Redirect::to("/login").into_response();
-        response.headers_mut().insert(
-            "Set-Cookie",
-            cookie.to_string().parse().unwrap(),
-        );
+        response
+            .headers_mut()
+            .insert("Set-Cookie", cookie.to_string().parse().unwrap());
         response
     }
 }
