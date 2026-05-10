@@ -17,7 +17,7 @@
 6. **Pluggable Auth** – A module can _become_ the auth UI and logic; swapping it requires no rewiring.
 7. **Minimal Ceremony** – The entry point (`main.rs`) is 5 lines. No Makefile codegen, no registry files.
 8. **Inter‑Module Communication via Message Bus** – A shared `TransportHub` acts as the central nervous system. Modules can publish messages to named topics and subscribe to them, enabling decoupled communication.
-9. **Connection Intents (Message Filters)** – Every real‑time connection subscribes to one or more **intents** (`ui`, `command`, `notification`, `all`) via a `?intent=` query parameter. Publishers tag messages with a category, and the transport layer filters delivery, so clients only receive what they asked for.
+9. **Connection Intents (Message Filters)** – Every real‑time message belongs to one of four categories: `ui`, `data`, `command`, or `notification`. With the **standard SSE encoder**, clients subscribe via a `?intent=ui,notification` query parameter and filtering happens server‑side, keeping the client as simple as possible. When the **Datastar encoder** is active, the Datastar SDK provides native event listeners for each category, making server‑side filtering unnecessary – the client does the filtering. In both cases, module code tags a message with a category and the framework ensures it reaches the right clients.
 10. **Pluggable Transport Encoders** – The SSE/WS transport layer can be configured to use different wire formats (e.g., Blenny’s standard JSON envelope, Datastar) without changing module code.
 11. **Multi‑Layer Configuration** – Settings are merged from command‑line arguments, environment variables, a JSON file, and embedded defaults, in that priority order. Only overrides need to be specified.
 12. **Anti‑Fragile Middleware** – Every handler response is wrapped by default to prevent server‑side crashes and enforce a consistent shape.
@@ -72,7 +72,10 @@ blenny-rs/
 ### TransportHub (Message Bus & Real‑Time)
 
 - The `TransportHub` holds a Tokio broadcast channel for real‑time server‑to‑client events (SSE/WS), and it also serves as an **internal message bus**.
-- **Connection Intents:** When a client connects to `/sse?intent=ui,notification`, the hub registers a filter. Only messages tagged with that category are delivered. Multiple intents can be combined (comma‑separated). A message tagged with `"ui"` will reach a client subscribed to `"ui"`, but not one subscribed only to `"notification"`.
+- **Connection Intents:** Each message is tagged with a category (`ui`, `data`, `command`, `notification`).
+  - **Standard SSE encoder:** Clients connect to `/sse?intent=ui,notification`. The transport layer filters messages server‑side, only forwarding those whose category matches the client’s subscription.
+  - **Datastar encoder:** The Datastar SDK maps categories to named SSE event types (`datastar‑patch‑elements`, `datastar‑patch‑signals`, etc.). Clients use native event listeners to receive only the categories they care about, so the `?intent=` query parameter is **ignored** on the Datastar endpoint. Server‑side filtering is not needed.
+    In both cases, module code simply tags a message with a category; the rest is handled by the framework.
 - **Pluggable Encoders:** The SSE/WS bridge can be configured to use a `BlennyStandardEncoder` or a `DatastarEncoder`, changing the wire format without affecting modules.
 - **Direct Per‑User Messaging:** The hub provides `direct_message(user_id, payload)` – messages are only sent to the specific user’s connections (after authentication).
 - **Topic‑Based Pub/Sub (high priority):** Modules can publish to named topics (`"order.created"`) and subscribe to them, decoupling inter‑module communication. This will be implemented as a `HashMap<String, broadcast::Sender<Vec<u8>>>` inside `TransportHub` right after authentication is stable.
@@ -128,6 +131,7 @@ blenny-rs/
 ### Service Bundle (AppState)
 
 - To prevent fragmented `Extension<T>` layers and ease a future migration to `State`, all singletons will be bundled into a single `AppState` struct:
+
   ```rust
   pub struct AppState {
       pub conduit: Option<Arc<Conduit>>,
@@ -135,8 +139,6 @@ blenny-rs/
       pub auth: Option<Arc<dyn AuthProvider>>,
   }
   ```
-
-```
 
 - This will be injected as `Extension<AppState>` (later `State<AppState>`). Handlers can extract the whole state or individual fields.
 - This refactor will happen right after authentication is stable.
@@ -194,20 +196,21 @@ blenny-rs/
 
 ## 📝 Key Architectural Decisions
 
-| Decision                                           | Rationale                                                                                                       |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **`inventory` over `linkme`**                      | Eliminates false rust‑analyzer errors, better DX. Same compile‑time discovery.                                  |
-| **`Arc<Conduit>` as `Extension` → later `State`**  | Shared, cheap to clone. Bundled into `AppState` soon for a single injection point.                              |
-| **Layers applied after routes**                    | Axum requires that extensions/middleware wrap all routes; adding after route registration ensures availability. |
-| **Conduit strips extensions**                      | Keeps module template names clean (`"auth/login"`) while files stay `.tera`.                                    |
-| **Proc‑macro in separate crate**                   | Required by Rust for proc‑macros. Re‑exported with `pub use blenny_macros::blenny_module`.                      |
-| **`extern crate self as blenny`**                  | Allows generated code to refer to `blenny::ModuleRegistration` from inside the crate. Do not remove.            |
-| **Auth protect layer before auth routes**          | Keeps login routes public while protecting module routes.                                                       |
-| **Infrastructure routes bypass global middleware** | Avoids double authentication and keeps health/SSE/static endpoints simple.                                      |
-| **Connection intents via query params**            | Mirrors the Smalltalk model; lightweight and easy to implement with Tokio channels.                             |
-| **Pluggable encoders as configuration**            | Allows swapping wire format (Standard vs Datastar) without code changes.                                        |
-| **Feature flags for dev/prod**                     | `#[cfg(debug_assertions)]` currently used; will be replaced by a `hot-reload` feature for finer control.        |
-| **Topic‑based pub/sub prioritized**                | Unlocks decoupled inter‑module communication with minimal API surface.                                          |
+| Decision                                           | Rationale                                                                                                                                                     |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`inventory` over `linkme`**                      | Eliminates false rust‑analyzer errors, better DX. Same compile‑time discovery.                                                                                |
+| **`Arc<Conduit>` as `Extension` → later `State`**  | Shared, cheap to clone. Bundled into `AppState` soon for a single injection point.                                                                            |
+| **Layers applied after routes**                    | Axum requires that extensions/middleware wrap all routes; adding after route registration ensures availability.                                               |
+| **Conduit strips extensions**                      | Keeps module template names clean (`"auth/login"`) while files stay `.tera`.                                                                                  |
+| **Proc‑macro in separate crate**                   | Required by Rust for proc‑macros. Re‑exported with `pub use blenny_macros::blenny_module`.                                                                    |
+| **`extern crate self as blenny`**                  | Allows generated code to refer to `blenny::ModuleRegistration` from inside the crate. Do not remove.                                                          |
+| **Auth protect layer before auth routes**          | Keeps login routes public while protecting module routes.                                                                                                     |
+| **Infrastructure routes bypass global middleware** | Avoids double authentication and keeps health/SSE/static endpoints simple.                                                                                    |
+| **Connection intents via query params**            | Mirrors the Smalltalk model; lightweight and easy to implement with Tokio channels.                                                                           |
+| **Pluggable encoders as configuration**            | Allows swapping wire format (Standard vs Datastar) without code changes.                                                                                      |
+| **Feature flags for dev/prod**                     | `#[cfg(debug_assertions)]` currently used; will be replaced by a `hot-reload` feature for finer control.                                                      |
+| **Topic‑based pub/sub prioritized**                | Unlocks decoupled inter‑module communication with minimal API surface.                                                                                        |
+| **Intent system encoder agnosticism**              | The four categories are stable; filtering responsibility shifts from server (standard encoder) to client (Datastar). No module code changes between encoders. |
 
 ## 🧘‍♀️ Philosophy Summary
 
@@ -222,4 +225,4 @@ Blenny‑rs is not a direct copy of the Smalltalk implementation; it’s a re‑
 - **Backpressure Awareness:** Documented the broadcast buffer behavior and future configurability.
 - **Error Handling Strategy:** Planned a unified `BlennyError` type.
 - **Static Assets Clarification:** Conduit is for templates only; a separate `StaticAssets` component will handle CSS/JS.
-```
+- **Datastar Simplification:** When the Datastar encoder is active, connection‑intent filtering moves from the server to the client, eliminating the need for the `?intent=` query parameter on that endpoint.
