@@ -17,7 +17,7 @@
 6. **Pluggable Auth** – A module can _become_ the auth UI and logic; swapping it requires no rewiring.
 7. **Minimal Ceremony** – The entry point (`main.rs`) is 5 lines. No Makefile codegen, no registry files.
 8. **Inter‑Module Communication via Message Bus** – A shared `TransportHub` acts as the central nervous system. Modules can publish messages to named topics and subscribe to them, enabling decoupled communication.
-9. **Connection Intents (Message Filters)** – Every real‑time message belongs to one of four categories: `ui`, `data`, `command`, or `notification`. With the **standard SSE encoder**, clients subscribe via a `?intent=ui,notification` query parameter and filtering happens server‑side, keeping the client as simple as possible. When the **Datastar encoder** is active, the Datastar SDK provides native event listeners for each category, making server‑side filtering unnecessary – the client does the filtering. In both cases, module code tags a message with a category and the framework ensures it reaches the right clients.
+9. **Connection Intents (Message Filters)** – Every real‑time message belongs to one of four categories: `ui`, `data`, `command`, or `notification`. With the **standard SSE encoder**, clients can optionally subscribe via a ?intent=ui,notification query parameter; if omitted, all message categories are sent, keeping the client as simple as possible. When the **Datastar encoder** is active, the Datastar SDK provides native event listeners for each category, making server‑side filtering unnecessary – the client does the filtering. In both cases, module code tags a message with a category and the framework ensures it reaches the right clients.
 10. **Pluggable Transport Encoders** – The SSE/WS transport layer can be configured to use different wire formats (e.g., Blenny’s standard JSON envelope, Datastar) without changing module code.
 11. **Multi‑Layer Configuration** – Settings are merged from command‑line arguments, environment variables, a JSON file, and embedded defaults, in that priority order. Only overrides need to be specified.
 12. **Anti‑Fragile Middleware** – Every handler response is wrapped by default to prevent server‑side crashes and enforce a consistent shape.
@@ -73,7 +73,7 @@ blenny-rs/
 
 - The `TransportHub` holds a Tokio broadcast channel for real‑time server‑to‑client events (SSE/WS), and it also serves as an **internal message bus**.
 - **Connection Intents:** Each message is tagged with a category (`ui`, `data`, `command`, `notification`).
-  - **Standard SSE encoder:** Clients connect to `/sse?intent=ui,notification`. The transport layer filters messages server‑side, only forwarding those whose category matches the client’s subscription.
+  - **Standard SSE encoder:** Clients connect to /sse. If no ?intent= parameter is given, every message is sent (the client receives all categories). When a client specifies ?intent=ui,notification, the transport layer filters server‑side and only forwards messages whose category matches the subscription.
   - **Datastar encoder:** The Datastar SDK maps categories to named SSE event types (`datastar‑patch‑elements`, `datastar‑patch‑signals`, etc.). Clients use native event listeners to receive only the categories they care about, so the `?intent=` query parameter is **ignored** on the Datastar endpoint. Server‑side filtering is not needed.
     In both cases, module code simply tags a message with a category; the rest is handled by the framework.
 - **Pluggable Encoders:** The SSE/WS bridge can be configured to use a `BlennyStandardEncoder` or a `DatastarEncoder`, changing the wire format without affecting modules.
@@ -182,7 +182,7 @@ blenny-rs/
 | Pluggable authentication (JWT)                           | ✅ Implemented |
 | Service bundle (`AppState`)                              | ✅ Implemented |
 | Topic‑based pub/sub for inter‑module messaging           | ✅ Implemented |
-| Connection intents (message filtering)                   | ⬜ Planned     |
+| Connection intents (message filtering)                   | ✅ Implemented   |
 | Pluggable transport encoders                             | ⬜ Planned     |
 | Multi‑layer configuration                                | ⬜ Planned     |
 | Anti‑fragile middleware                                  | ⬜ Planned     |

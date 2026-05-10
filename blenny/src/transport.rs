@@ -1,8 +1,8 @@
 use axum::{
-    extract::Extension,
+    extract::{Extension, Query},
     response::sse::{Event, KeepAlive, Sse},
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::broadcast;
@@ -92,24 +92,36 @@ impl TransportHub {
     }
 }
 
-/// SSE endpoint handler.
+/// SSE endpoint with optional intent filter.
+/// If no ?intent= query parameter is given, all message categories are sent.
+/// Example: /sse?intent=ui,notification
 pub async fn sse_handler(
     Extension(state): Extension<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>> {
+    // Parse intents: if not provided, do not filter (send all).
+    let intent_param = params.get("intent");
+    let do_filter = intent_param.is_some(); // only filter when ?intent is present
+    let intents: HashSet<String> = intent_param
+        .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
+        .unwrap_or_default();
+
     let mut rx = state.hub.subscribe();
     let stream = async_stream::stream! {
         loop {
             match rx.recv().await {
                 Ok(msg) => {
-                    // Determine payload: prefer html, fallback to signals, skip if none.
-                    let data = if let Some(html) = msg.html {
-                        html
-                    } else if let Some(signals) = msg.signals {
-                        signals
-                    } else {
-                        continue;
-                    };
-                    yield Ok(Event::default().data(data));
+                    // Forward if no filter, or if category matches.
+                    if !do_filter || intents.contains(&msg.category) {
+                        let data = if let Some(html) = msg.html {
+                            html
+                        } else if let Some(signals) = msg.signals {
+                            signals
+                        } else {
+                            continue;
+                        };
+                        yield Ok(Event::default().data(data));
+                    }
                 }
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(broadcast::error::RecvError::Closed) => break,
