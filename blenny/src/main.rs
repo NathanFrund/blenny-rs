@@ -1,5 +1,11 @@
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialise crypto provider for jsonwebtoken
+    jsonwebtoken::crypto::CryptoProvider::install_default(
+        &jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER,
+    )
+    .expect("Failed to install crypto provider");
+
     // Use the path to the `templates/` directory inside the `blenny` crate.
     let template_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/templates");
 
