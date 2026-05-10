@@ -7,6 +7,8 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio_stream::Stream;
 
+use crate::app_state::AppState;
+
 /// A message that can be sent to all connected SSE/WS clients.
 #[derive(Clone, Debug)]
 pub struct ServerMessage {
@@ -58,9 +60,9 @@ impl TransportHub {
 
 /// SSE endpoint handler.
 pub async fn sse_handler(
-    Extension(hub): Extension<Arc<TransportHub>>,
+    Extension(state): Extension<Arc<AppState>>,
 ) -> Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>> {
-    let mut rx = hub.subscribe();
+    let mut rx = state.hub.subscribe();
     let stream = async_stream::stream! {
         loop {
             match rx.recv().await {

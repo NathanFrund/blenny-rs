@@ -1,5 +1,6 @@
 extern crate self as blenny;
 
+pub mod app_state;                             // new
 pub mod auth;          // <-- NEW
 pub mod builder;
 pub mod conduit;
@@ -11,6 +12,7 @@ pub mod transport;
 pub use blenny_macros::blenny_module;
 pub use blenny_macros::blenny_auth_provider;   // NEW
 
+pub use app_state::AppState;                   // new
 pub use builder::BlennyBuilder;
 pub use conduit::Conduit;
 pub use module::{BlennyModule, ModuleRegistration};

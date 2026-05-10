@@ -1,7 +1,7 @@
 // blenny/src/builder.rs
-use crate::Conduit;
+use crate::{AppState, Conduit};
 use crate::module::{BlennyModule, ModuleRegistration};
-use crate::transport::{TransportHub, sse_handler};
+use crate::transport::TransportHub;
 use crate::auth::{AuthProvider, AuthRegistration};   // NEW
 use axum::Router;
 use std::sync::Arc; // new
@@ -31,30 +31,22 @@ impl BlennyBuilder {
 
     pub async fn serve(self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mut router = Router::new();
-        let mut modules: Vec<Box<dyn BlennyModule>> = Vec::new();
 
-        // Auto‑discover modules
+        // ---- Discover modules without immediate init ----
         println!("Discovering modules...");
-        let mut module_count = 0;
+        let mut module_regs: Vec<(String, Box<dyn BlennyModule>)> = Vec::new();
         for reg in inventory::iter::<ModuleRegistration> {
-            let mut module: Box<dyn BlennyModule> = (reg.constructor)();
+            let module: Box<dyn BlennyModule> = (reg.constructor)();
             if !module.is_enabled() {
                 println!("  - skipping disabled module: {}", reg.name);
                 continue;
             }
-            println!("  - initializing module: {}", reg.name);
-
-            // Initialize module with dependencies
-            module.initialize_module(self.conduit.clone(), self.transport_hub.clone());
-
-            // Register routes
-            router = module.register_routes(router);
-            modules.push(module);
-            module_count += 1;
+            println!("  - found module: {}", reg.name);
+            module_regs.push((reg.name.to_string(), module));
         }
-        println!("Registered {} module(s).", module_count);
+        println!("Found {} module(s).", module_regs.len());
 
-        // ---- Auth discovery and layer application (NEW) ----
+        // ---- Auth discovery ----
         let mut auth_provider: Option<Arc<dyn AuthProvider>> = None;
         for reg in inventory::iter::<AuthRegistration> {
             if auth_provider.is_some() {
@@ -65,35 +57,38 @@ impl BlennyBuilder {
             println!("Using auth provider: {}", reg.name);
         }
 
-        // Apply protect layer BEFORE auth routes (so login is public)
-        if let Some(auth) = &auth_provider {
-            router = auth.protect_router(router);
+        // ---- Build AppState ----
+        let app_state = Arc::new(AppState::new(
+            self.conduit.clone(),
+            self.transport_hub.clone(),
+            auth_provider.clone(),
+        ));
+
+        // ---- Initialize modules, register routes, and keep them alive ----
+        let mut active_modules: Vec<Box<dyn BlennyModule>> = Vec::new();
+        for (name, mut module) in module_regs {
+            module.initialize_module(app_state.clone());
+            router = module.register_routes(router);
+            println!("  - registered routes for module: {}", name);
+            active_modules.push(module);
         }
 
-        // Merge auth routes (login, etc.) - they are unprotected
-        if let Some(auth) = &auth_provider {
+        // ---- Auth layer and routes ----
+        if let Some(auth) = &app_state.auth {
+            router = auth.protect_router(router);
             router = router.merge(auth.auth_routes());
         }
-        // ---- end auth ----
 
         // Start all modules after routes are assembled
-        for module in &modules {
+        for module in &active_modules {
             module.start_module();
         }
 
-        // Core routes
+        // Public routes
         router = router.route("/health", axum::routing::get(|| async { "OK" }));
 
-        // Add SSE endpoint and inject TransportHub
-        let hub = self.transport_hub.clone();
-        router = router
-            .route("/sse", axum::routing::get(sse_handler))
-            .layer(axum::Extension(hub));
-
-        // Apply Conduit layer last (if present)
-        if let Some(conduit) = &self.conduit {
-            router = router.layer(axum::Extension(conduit.clone()));
-        }
+        // Inject AppState as an extension
+        router = router.layer(axum::Extension(app_state.clone()));
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
         println!("Blenny server listening on http://{addr}");

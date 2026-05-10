@@ -2,7 +2,7 @@
 use axum::Router;
 use std::sync::Arc;
 
-use crate::{Conduit, TransportHub};
+use crate::app_state::AppState;
 
 pub trait BlennyModule: Send + Sync + 'static {
     fn name(&self) -> &'static str;
@@ -11,9 +11,8 @@ pub trait BlennyModule: Send + Sync + 'static {
         true
     }
 
-    fn initialize_module(&mut self, _conduit: Option<Arc<Conduit>>, _hub: Arc<TransportHub>) {
+    fn initialize_module(&mut self, _state: Arc<AppState>) {
         // Default: do nothing
-        // Auth will be passed via AppState later
     }
 
     fn start_module(&self) {
