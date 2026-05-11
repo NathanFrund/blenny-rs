@@ -17,6 +17,7 @@ pub struct TestServer {
 
 impl TestServer {
     /// Get the port the server is running on
+    #[allow(unused)] // May be used in future tests
     pub fn port(&self) -> u16 {
         self.port
     }
@@ -92,6 +93,7 @@ impl Default for TestUser {
 }
 
 impl TestUser {
+    #[allow(unused)] // May be used for testing different user credentials
     pub fn new(username: impl Into<String>, password: impl Into<String>) -> Self {
         Self {
             username: username.into(),
@@ -136,11 +138,13 @@ pub async fn make_authenticated_request(
 }
 
 /// Test fixture for SSE connections
+#[allow(unused)] // Future SSE integration tests will use this
 pub struct SseTestFixture {
     pub client: Client,
     pub base_url: String,
 }
 
+#[allow(unused)] // Future SSE integration tests will use this
 impl SseTestFixture {
     pub async fn new() -> Self {
         let server = get_test_server().await;
