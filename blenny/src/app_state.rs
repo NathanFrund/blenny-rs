@@ -12,6 +12,7 @@ pub struct AppState {
     pub hub: Arc<TransportHub>,
     pub auth: Option<Arc<dyn AuthProvider>>,
     pub encoder: Arc<dyn TransportEncoder>,   // NEW
+    pub jwt_secret: String,                   // NEW
 }
 
 impl AppState {
@@ -20,7 +21,8 @@ impl AppState {
         hub: Arc<TransportHub>,
         auth: Option<Arc<dyn AuthProvider>>,
         encoder: Arc<dyn TransportEncoder>,    // NEW
+        jwt_secret: String,                    // NEW
     ) -> Self {
-        AppState { conduit, hub, auth, encoder }
+        AppState { conduit, hub, auth, encoder, jwt_secret }
     }
 }

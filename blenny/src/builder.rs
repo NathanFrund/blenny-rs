@@ -1,5 +1,6 @@
 // blenny/src/builder.rs
 use crate::auth::{AuthProvider, AuthRegistration};
+use crate::config::BlennyConfig;
 use crate::encoder::TransportEncoder;
 use crate::module::{BlennyModule, ModuleRegistration};
 use crate::transport::{TransportHub, sse_handler};
@@ -10,13 +11,15 @@ use std::sync::Arc;
 pub struct BlennyBuilder {
     pub conduit: Option<Arc<Conduit>>,
     pub transport_hub: Arc<TransportHub>,
+    config: BlennyConfig,
 }
 
 impl BlennyBuilder {
-    pub fn new() -> Self {
+    pub fn new(config: BlennyConfig) -> Self {
         BlennyBuilder {
             conduit: None,
             transport_hub: Arc::new(TransportHub::new()),
+            config,
         }
     }
 
@@ -72,6 +75,7 @@ impl BlennyBuilder {
             self.transport_hub.clone(),
             auth_provider.clone(),
             encoder,
+            self.config.jwt_secret.clone(),
         ));
 
         // ---- Initialize modules, register routes ----
@@ -112,6 +116,6 @@ impl BlennyBuilder {
 
 impl Default for BlennyBuilder {
     fn default() -> Self {
-        Self::new()
+        Self::new(BlennyConfig::default())
     }
 }

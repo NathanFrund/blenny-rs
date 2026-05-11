@@ -6,16 +6,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .expect("Failed to install crypto provider");
 
-    // Use the path to the `templates/` directory inside the `blenny` crate.
-    let template_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/templates");
+    // Load configuration (env vars + blenny.json + defaults)
+    let config = blenny::BlennyConfig::load();
 
-    let conduit = if cfg!(debug_assertions) {
+    // Choose template source
+    let conduit = if let Some(dir) = &config.template_dir {
+        blenny::Conduit::hot_reload(dir)?
+    } else if cfg!(debug_assertions) {
+        let template_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/templates");
         blenny::Conduit::hot_reload(template_dir)?
     } else {
         blenny::Conduit::frozen()?
     };
 
-    blenny::BlennyBuilder::default()
+    blenny::BlennyBuilder::new(config)
         .with_conduit(conduit)
         .with_default_transports()
         .serve("0.0.0.0:8081")

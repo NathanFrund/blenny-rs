@@ -27,6 +27,7 @@ axum-extra = { version = "0.12", features = ["cookie"] }
 cookie = "0.18"
 time = "0.3"
 datastar = { version = "0.3", optional = true }
+figment = { version = "0.10", features = ["json", "env"] }
 
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json", "cookies", "stream"] }

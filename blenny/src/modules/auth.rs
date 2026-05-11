@@ -75,7 +75,7 @@ async fn login_submit(
         let token = jsonwebtoken::encode(
             &jsonwebtoken::Header::default(),
             &claims,
-            &jsonwebtoken::EncodingKey::from_secret(b"my-secret-key"),
+            &jsonwebtoken::EncodingKey::from_secret(state.jwt_secret.as_bytes()),
         )
         .unwrap();
 
@@ -128,6 +128,9 @@ pub async fn validate_token(
         return next.run(req).await.into_response();
     }
 
+    // Retrieve AppState from request extensions
+    let state = req.extensions().get::<std::sync::Arc<crate::AppState>>().expect("AppState missing in middleware").clone();
+
     // Parse token
     let token_from_cookie = req
         .headers()
@@ -153,7 +156,7 @@ pub async fn validate_token(
     let token = token_from_cookie.or(token_from_header);
 
     if let Some(token) = token {
-        let decoding_key = jsonwebtoken::DecodingKey::from_secret(b"my-secret-key");
+        let decoding_key = jsonwebtoken::DecodingKey::from_secret(state.jwt_secret.as_bytes());
         if let Ok(token_data) = jsonwebtoken::decode::<Claims>(
             &token,
             &decoding_key,
