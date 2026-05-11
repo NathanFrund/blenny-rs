@@ -1,4 +1,4 @@
-use crate::{AppState, BlennyModule, blenny_module, transport::ServerMessage};
+use crate::{AppState, BlennyModule, blenny_module, transport::ServerMessage, auth::User};
 use axum::{
     Extension, Router,
     response::{Html, IntoResponse},
@@ -20,6 +20,7 @@ impl BlennyModule for TestBroadcastModule {
             .route("/test-page", get(test_page))
             .route("/trigger-broadcast", get(trigger_broadcast))
             .route("/panic", get(panic_test))
+            .route("/direct-to-me", get(direct_to_me_handler))
     }
 }
 
@@ -66,4 +67,13 @@ async fn trigger_broadcast(
 // Test route that panics to verify anti-fragile middleware
 async fn panic_test() -> &'static str {
     panic!("Test panic - this should be caught by the anti-fragile middleware");
+}
+
+// Test route that sends a direct message to the logged-in user
+async fn direct_to_me_handler(
+    Extension(state): Extension<Arc<AppState>>,
+    Extension(user): Extension<User>,
+) -> impl IntoResponse {
+    state.hub.direct_html_to_user(&user.id, "<p>Direct message!</p>");
+    "Sent direct message"
 }

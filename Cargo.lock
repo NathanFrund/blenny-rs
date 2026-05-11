@@ -184,6 +184,7 @@ dependencies = [
  "cookie",
  "datastar",
  "figment",
+ "futures",
  "inventory",
  "jsonwebtoken",
  "mime_guess",
@@ -2299,6 +2300,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

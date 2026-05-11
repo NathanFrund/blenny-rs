@@ -15,6 +15,36 @@ pub struct User {
     pub id: String,
 }
 
+impl User {
+    /// Extract and validate a User from request headers, using the given JWT secret.
+    pub fn from_headers(headers: &axum::http::HeaderMap, jwt_secret: &str) -> Option<Self> {
+        let token = headers
+            .get(axum::http::header::COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|cookies_str| {
+                cookies_str.split("; ").find_map(|cookie| {
+                    let (name, value) = cookie.split_once('=')?;
+                    if name.trim() == "blenny_token" {
+                        Some(value.trim().to_string())
+                    } else {
+                        None
+                    }
+                })
+            })
+            .or_else(|| {
+                headers
+                    .get(axum::http::header::AUTHORIZATION)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.strip_prefix("Bearer ").map(|t| t.to_string()))
+            })?;
+
+        let decoding_key = jsonwebtoken::DecodingKey::from_secret(jwt_secret.as_bytes());
+        jsonwebtoken::decode::<Claims>(&token, &decoding_key, &jsonwebtoken::Validation::default())
+            .ok()
+            .map(|data| User { id: data.claims.sub })
+    }
+}
+
 // ---------- AuthProvider trait ----------
 
 pub trait AuthProvider: Send + Sync {

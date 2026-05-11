@@ -1,5 +1,6 @@
 use axum::{
     extract::{Extension, Query},
+    http::HeaderMap,
     response::sse::{Event, KeepAlive, Sse},
 };
 use std::collections::{HashMap, HashSet};
@@ -25,6 +26,8 @@ pub struct TransportHub {
     tx: broadcast::Sender<ServerMessage>,
     // Topic‑based channels for inter‑module messaging
     topics: Arc<RwLock<HashMap<String, broadcast::Sender<String>>>>,
+    // Per-user channels for direct messaging
+    users: Arc<RwLock<HashMap<String, broadcast::Sender<ServerMessage>>>>,
 }
 
 impl TransportHub {
@@ -33,6 +36,7 @@ impl TransportHub {
         TransportHub {
             tx,
             topics: Arc::new(RwLock::new(HashMap::new())),
+            users: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -88,6 +92,44 @@ impl TransportHub {
         });
         sender.subscribe()
     }
+
+    /// Register a user (or replace existing) and return a personal receiver for direct messages.
+    pub fn register_user(&self, user_id: &str) -> broadcast::Receiver<ServerMessage> {
+        let (tx, rx) = broadcast::channel::<ServerMessage>(64);
+        self.users.write().unwrap().insert(user_id.to_string(), tx);
+        rx
+    }
+
+    /// Send a message directly to a specific user.
+    pub fn direct_to_user(&self, user_id: &str, msg: ServerMessage) {
+        if let Some(tx) = self.users.read().unwrap().get(user_id) {
+            let _ = tx.send(msg);
+        }
+    }
+
+    /// Convenience: send HTML directly to a user.
+    pub fn direct_html_to_user(&self, user_id: &str, html: &str) {
+        self.direct_to_user(
+            user_id,
+            ServerMessage {
+                category: "ui".into(),
+                html: Some(html.into()),
+                signals: None,
+            },
+        );
+    }
+
+    /// Convenience: send data directly to a user.
+    pub fn direct_data_to_user(&self, user_id: &str, data: &str) {
+        self.direct_to_user(
+            user_id,
+            ServerMessage {
+                category: "data".into(),
+                html: None,
+                signals: Some(data.into()),
+            },
+        );
+    }
 }
 
 /// SSE endpoint with optional intent filter.
@@ -96,6 +138,7 @@ impl TransportHub {
 pub async fn sse_handler(
     Extension(state): Extension<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
 ) -> Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>> {
     // Determine if we should apply server‑side intent filtering.
     let do_server_filter = !state.encoder.filters_client_side();
@@ -105,26 +148,56 @@ pub async fn sse_handler(
         .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
         .unwrap_or_default();
 
-    let mut rx = state.hub.subscribe();
+    // Try to authenticate user
+    let user = crate::auth::User::from_headers(&headers, &state.jwt_secret);
+
+    // If authenticated, register personal channel
+    let mut personal_rx = if let Some(user) = user {
+        Some(state.hub.register_user(&user.id))
+    } else {
+        None
+    };
+
+    let mut global_rx = state.hub.subscribe();
 
     let stream = async_stream::stream! {
         loop {
-            match rx.recv().await {
-                Ok(msg) => {
-                    println!("SSE handler got message: {:?}", msg);
-                    // Apply server‑side filter only if the encoder doesn't handle it
-                    // AND the client requested filtering via ?intent parameter.
-                    if do_server_filter && do_filter && !intents.contains(&msg.category) {
-                        continue;
+            // Check both global and personal channels
+            let msg = if let Some(ref mut personal_rx) = personal_rx {
+                // Use tokio::select! to wait for either global or personal messages
+                tokio::select! {
+                    global_msg = global_rx.recv() => {
+                        match global_msg {
+                            Ok(msg) => msg,
+                            Err(_) => continue,
+                        }
                     }
-                    let event = state.encoder.to_event(&msg);
-                    yield Ok(event);
+                    personal_msg = personal_rx.recv() => {
+                        match personal_msg {
+                            Ok(msg) => msg,
+                            Err(_) => continue,
+                        }
+                    }
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(broadcast::error::RecvError::Closed) => break,
+            } else {
+                // Only global messages for unauthenticated users
+                match global_rx.recv().await {
+                    Ok(msg) => msg,
+                    Err(_) => continue,
+                }
+            };
+
+            // Apply server‑side filter only if the encoder doesn't handle it
+            // AND the client requested filtering via ?intent parameter.
+            if do_server_filter && do_filter && !intents.contains(&msg.category) {
+                continue;
             }
+
+            let event = state.encoder.to_event(&msg);
+            yield Ok(event);
         }
     };
+
     Sse::new(stream).keep_alive(
         KeepAlive::new()
             .interval(Duration::from_secs(15))
