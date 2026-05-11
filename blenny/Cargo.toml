@@ -31,3 +31,5 @@ datastar = { version = "0.3", optional = true }
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json", "cookies", "stream"] }
 tokio = { version = "1", features = ["full"] }
+rstest = "0.23"
+tokio-test = "0.4"

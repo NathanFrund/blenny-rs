@@ -1,38 +1,16 @@
-use blenny::{BlennyBuilder, Conduit};
-use reqwest::{Client, redirect};
-
-async fn start_server(port: u16) -> u16 {
-    let addr = format!("127.0.0.1:{}", port);
-    tokio::spawn(async move {
-        // Use real Conduit for the login form template
-        let conduit = Conduit::hot_reload("templates/").unwrap();
-        BlennyBuilder::default()
-            .with_conduit(conduit)
-            .with_default_transports()
-            .serve(&addr)
-            .await
-            .unwrap();
-    });
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    port
-}
-
-fn create_client() -> Client {
-    Client::builder()
-        .redirect(redirect::Policy::none())
-        .build()
-        .unwrap()
-}
+mod test_utils;
+use test_utils::{get_test_server, create_test_client, login_and_get_cookie, TestUser, make_authenticated_request};
 
 #[tokio::test]
 async fn login_sets_cookie_and_redirects() {
-    let port = start_server(51236).await;
-    let client = create_client();
+    let server = get_test_server().await;
+    let client = create_test_client();
+    let user = TestUser::default();
 
     let response = client
-        .post(format!("http://127.0.0.1:{}/login", port))
+        .post(&format!("{}/login", server.base_url()))
         .header("Content-Type", "application/x-www-form-urlencoded")
-        .body("username=admin&password=password")
+        .body(format!("username={}&password={}", user.username, user.password))
         .send()
         .await
         .unwrap();
@@ -45,28 +23,20 @@ async fn login_sets_cookie_and_redirects() {
 
 #[tokio::test]
 async fn dashboard_accessible_with_cookie() {
-    let port = start_server(51237).await;
-    let client = create_client();
+    let server = get_test_server().await;
+    let client = create_test_client();
+    let user = TestUser::default();
 
-    // Login first
-    let response = client
-        .post(format!("http://127.0.0.1:{}/login", port))
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body("username=admin&password=password")
-        .send()
-        .await
-        .unwrap();
-
-    // Extract cookie
-    let cookie = response.cookies().next().unwrap();
+    // Login and get auth cookie
+    let auth_cookie = login_and_get_cookie(&client, &server.base_url(), &user).await;
 
     // Request dashboard with cookie
-    let dashboard_response = client
-        .get(format!("http://127.0.0.1:{}/dashboard", port))
-        .header("Cookie", format!("{}={}", cookie.name(), cookie.value()))
-        .send()
-        .await
-        .unwrap();
+    let dashboard_response = make_authenticated_request(
+        &client,
+        reqwest::Method::GET,
+        &format!("{}/dashboard", server.base_url()),
+        &auth_cookie,
+    ).await;
 
     assert_eq!(dashboard_response.status().as_u16(), 200);
     let body = dashboard_response.text().await.unwrap();
@@ -75,11 +45,11 @@ async fn dashboard_accessible_with_cookie() {
 
 #[tokio::test]
 async fn dashboard_without_cookie_redirects_to_login() {
-    let port = start_server(51238).await;
-    let client = create_client();
+    let server = get_test_server().await;
+    let client = create_test_client();
 
     let response = client
-        .get(format!("http://127.0.0.1:{}/dashboard", port))
+        .get(&format!("{}/dashboard", server.base_url()))
         .send()
         .await
         .unwrap();
@@ -97,26 +67,20 @@ async fn dashboard_without_cookie_redirects_to_login() {
 
 #[tokio::test]
 async fn logout_clears_cookie() {
-    let port = start_server(51239).await;
-    let client = create_client();
+    let server = get_test_server().await;
+    let client = create_test_client();
+    let user = TestUser::default();
 
-    // Login
-    let response = client
-        .post(format!("http://127.0.0.1:{}/login", port))
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body("username=admin&password=password")
-        .send()
-        .await
-        .unwrap();
-    let cookie = response.cookies().next().unwrap();
+    // Login and get auth cookie
+    let auth_cookie = login_and_get_cookie(&client, &server.base_url(), &user).await;
 
     // Logout
-    let logout_response = client
-        .get(format!("http://127.0.0.1:{}/logout", port))
-        .header("Cookie", format!("{}={}", cookie.name(), cookie.value()))
-        .send()
-        .await
-        .unwrap();
+    let logout_response = make_authenticated_request(
+        &client,
+        reqwest::Method::GET,
+        &format!("{}/logout", server.base_url()),
+        &auth_cookie,
+    ).await;
 
     assert_eq!(logout_response.status().as_u16(), 303);
 }
