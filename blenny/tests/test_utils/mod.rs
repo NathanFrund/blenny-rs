@@ -6,7 +6,6 @@
 use blenny::{BlennyBuilder, Conduit};
 use reqwest::{Client, redirect};
 use std::net::TcpListener;
-use tokio::sync::OnceCell;
 
 /// Test server fixture that manages a single server instance
 /// for the duration of all integration tests
@@ -28,35 +27,37 @@ impl TestServer {
     }
 }
 
-/// Global test server instance - initialized once and reused
-static TEST_SERVER: OnceCell<TestServer> = OnceCell::const_new();
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        // Abort the server task when TestServer is dropped
+        self._handle.abort();
+    }
+}
 
-/// Initialize and get the global test server
-pub async fn get_test_server() -> &'static TestServer {
-    TEST_SERVER.get_or_init(|| async {
-        let port = get_random_port();
-        let addr = format!("127.0.0.1:{}", port);
+/// Create and start a fresh test server for each test
+pub async fn get_test_server() -> TestServer {
+    let port = get_random_port();
+    let addr = format!("127.0.0.1:{}", port);
 
-        let handle = tokio::spawn(async move {
-            // Use real Conduit for template access in tests
-            let conduit = Conduit::hot_reload("templates/").unwrap();
-            let builder = BlennyBuilder::default()
-                .with_conduit(conduit)
-                .with_default_transports();
+    let handle = tokio::spawn(async move {
+        // Use real Conduit for template access in tests
+        let conduit = Conduit::hot_reload("templates/").unwrap();
+        let builder = BlennyBuilder::default()
+            .with_conduit(conduit)
+            .with_default_transports();
 
-            if let Err(e) = builder.serve(&addr).await {
-                eprintln!("Test server error: {}", e);
-            }
-        });
-
-        // Wait for server to be ready
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-
-        TestServer {
-            port,
-            _handle: handle,
+        if let Err(e) = builder.serve(&addr).await {
+            eprintln!("Test server error: {}", e);
         }
-    }).await
+    });
+
+    // Wait for server to be ready - increased timeout for reliability
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    TestServer {
+        port,
+        _handle: handle,
+    }
 }
 
 /// Get a random available port for testing
