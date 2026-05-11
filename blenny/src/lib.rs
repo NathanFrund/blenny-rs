@@ -7,6 +7,7 @@ pub mod config;
 pub mod conduit;
 pub mod error;
 pub mod middleware;
+pub mod static_assets;
 pub mod embedded;
 pub mod encoder;
 pub mod module;

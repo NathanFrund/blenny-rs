@@ -185,7 +185,7 @@ blenny-rs/
 | Connection intents (message filtering)                   | ✅ Implemented |
 | Pluggable transport encoders                             | ✅ Implemented |
 | Multi‑layer configuration                                | ✅ Implemented |
-| Anti‑fragile middleware                                  | ⬜ Planned     |
+| Anti‑fragile middleware                                  | ✅ Implemented |
 | Direct per‑user messaging                                | ⬜ Planned     |
 | Per‑route auth control (`#[public]` attribute)           | ⬜ Planned     |
 | WebSocket sidecar                                        | ⬜ Planned     |

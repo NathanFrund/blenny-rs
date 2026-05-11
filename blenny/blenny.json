@@ -1,6 +1,6 @@
 {
-  "port": 3000,
+  "port": 3001,
   "jwt_secret": "production-secret-key-change-me",
-  "template_dir": "./templates",
+  "template_dir": "templates",
   "encoder": "standard"
 }

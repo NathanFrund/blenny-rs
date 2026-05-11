@@ -110,3 +110,5 @@ async fn panic_route_returns_json_error() {
         .unwrap()
         .contains("Request handler panicked"));
 }
+
+

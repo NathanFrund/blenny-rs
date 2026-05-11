@@ -8,6 +8,7 @@ use crate::transport::{TransportHub, sse_handler};
 use crate::{AppState, Conduit};
 use axum::Router;
 use std::sync::Arc;
+use tower_http::services::ServeDir;
 
 pub struct BlennyBuilder {
     pub conduit: Option<Arc<Conduit>>,
@@ -107,6 +108,15 @@ impl BlennyBuilder {
         // Public routes
         router = router.route("/health", axum::routing::get(|| async { "OK" }));
         router = router.route("/sse", axum::routing::get(sse_handler));
+
+        // Static assets
+        #[cfg(debug_assertions)]
+        {
+            router = router.nest_service(
+                "/static",
+                ServeDir::new("static"),
+            );
+        }
 
         // Inject AppState
         router = router.layer(axum::Extension(app_state.clone()));

@@ -19,9 +19,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         blenny::Conduit::frozen()?
     };
 
+    let port = config.port;
     blenny::BlennyBuilder::new(config)
         .with_conduit(conduit)
         .with_default_transports()
-        .serve("0.0.0.0:8081")
+        .serve(&format!("127.0.0.1:{}", port))
         .await
 }

@@ -12,7 +12,7 @@ blenny-macros = { path = "../blenny-macros" }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 inventory = "0.3"
 tera = "1"
 rust-embed = "8"
@@ -29,6 +29,7 @@ time = "0.3"
 datastar = { version = "0.3", optional = true }
 figment = { version = "0.10", features = ["json", "env"] }
 thiserror = "2"
+mime_guess = "2"
 
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json", "cookies", "stream"] }

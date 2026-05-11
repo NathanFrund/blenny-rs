@@ -40,8 +40,8 @@ pub async fn get_test_server() -> TestServer {
     let addr = format!("127.0.0.1:{}", port);
 
     let handle = tokio::spawn(async move {
-        // Use real Conduit for template access in tests
-        let conduit = Conduit::hot_reload("templates/").unwrap();
+        // Use frozen Conduit for tests (no hot-reload needed)
+        let conduit = Conduit::frozen().unwrap();
         let builder = BlennyBuilder::default()
             .with_conduit(conduit)
             .with_default_transports();
