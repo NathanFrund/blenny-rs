@@ -5,6 +5,8 @@ pub mod auth;          // <-- NEW
 pub mod builder;
 pub mod config;
 pub mod conduit;
+pub mod error;
+pub mod middleware;
 pub mod embedded;
 pub mod encoder;
 pub mod module;

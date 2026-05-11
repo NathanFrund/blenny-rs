@@ -2,6 +2,7 @@
 use crate::auth::{AuthProvider, AuthRegistration};
 use crate::config::BlennyConfig;
 use crate::encoder::TransportEncoder;
+use crate::middleware::AntiFragileLayer;
 use crate::module::{BlennyModule, ModuleRegistration};
 use crate::transport::{TransportHub, sse_handler};
 use crate::{AppState, Conduit};
@@ -94,6 +95,9 @@ impl BlennyBuilder {
             router = router.merge(auth.auth_routes()); // public auth routes
             router = auth.protect_router(router); // auth module applies its middleware
         }
+
+        // Apply anti-fragile middleware to module routes
+        router = router.layer(AntiFragileLayer);
 
         // Start all modules
         for module in &active_modules {

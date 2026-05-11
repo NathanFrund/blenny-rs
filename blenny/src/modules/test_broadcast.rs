@@ -19,6 +19,7 @@ impl BlennyModule for TestBroadcastModule {
         router
             .route("/test-page", get(test_page))
             .route("/trigger-broadcast", get(trigger_broadcast))
+            .route("/panic", get(panic_test))
     }
 }
 
@@ -60,4 +61,9 @@ async fn trigger_broadcast(
         signals,
     });
     format!("Sent {}", category)
+}
+
+// Test route that panics to verify anti-fragile middleware
+async fn panic_test() -> &'static str {
+    panic!("Test panic - this should be caught by the anti-fragile middleware");
 }

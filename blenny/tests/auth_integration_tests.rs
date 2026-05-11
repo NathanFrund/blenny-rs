@@ -84,3 +84,29 @@ async fn logout_clears_cookie() {
 
     assert_eq!(logout_response.status().as_u16(), 303);
 }
+
+#[tokio::test]
+async fn panic_route_returns_json_error() {
+    let server = get_test_server().await;
+    let client = create_test_client();
+    let user = TestUser::default();
+
+    // First authenticate to access protected routes
+    let auth_cookie = login_and_get_cookie(&client, &server.base_url(), &user).await;
+
+    let response = client
+        .get(&format!("{}/panic", server.base_url()))
+        .header("Cookie", &auth_cookie)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status().as_u16(), 500);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["type"], "Internal");
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("Request handler panicked"));
+}
