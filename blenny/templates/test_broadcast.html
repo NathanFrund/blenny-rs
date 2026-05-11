@@ -7,10 +7,17 @@
   <body>
     <h1>SSE Connection Intents Test</h1>
 
-    <label for="intent">SSE Intent filter:</label>
+    <label for="intent">Intent filter:</label>
     <input id="intent" type="text" value="" />
-    <button onclick="connectSSE()">Connect SSE</button>
-    <button onclick="disconnectSSE()">Disconnect</button>
+    <br /><br />
+
+    <label for="protocol">Protocol:</label>
+    <select id="protocol">
+      <option value="sse">Server-Sent Events (SSE)</option>
+      <option value="ws">WebSocket</option>
+    </select>
+    <button onclick="connect()">Connect</button>
+    <button onclick="disconnect()">Disconnect</button>
     <br /><br />
 
     <button onclick="trigger('ui')">Send UI message</button>
@@ -33,62 +40,104 @@
       console.log("Test page loaded");
 
       let eventSource = null;
+      let websocket = null;
       const logElement = document.getElementById("log");
 
       function appendMessage(text, color) {
         color = color || "green";
-        console.log("[SSE]", text);
+        console.log("[Connection]", text);
         var div = document.createElement("div");
         div.style.color = color;
         div.textContent = text;
         logElement.appendChild(div);
       }
 
-      function connectSSE() {
+      function connect() {
         var intent = document.getElementById("intent").value.trim();
-        var url = intent ? "/sse?intent=" + encodeURIComponent(intent) : "/sse";
+        var protocol = document.getElementById("protocol").value;
 
-        if (eventSource) {
-          eventSource.close();
-          eventSource = null;
+        disconnect();
+
+        if (protocol === "sse") {
+          connectSSE(intent);
+        } else {
+          connectWebSocket(intent);
         }
+      }
+
+      function connectSSE(intent) {
+        var url = intent ? "/sse?intent=" + encodeURIComponent(intent) : "/sse";
 
         eventSource = new EventSource(url);
 
         eventSource.onopen = function () {
-          appendMessage("Connected to " + url, "black");
+          appendMessage("SSE Connected to " + url, "black");
         };
 
         eventSource.onmessage = function (e) {
-          appendMessage(e.data);
+          appendMessage("SSE: " + e.data);
         };
 
         eventSource.addEventListener("datastar-patch-elements", function (e) {
-          appendMessage(e.data);
+          appendMessage("SSE: " + e.data);
         });
 
         eventSource.addEventListener("datastar-patch-signals", function (e) {
-          appendMessage(e.data);
+          appendMessage("SSE: " + e.data);
         });
 
         eventSource.addEventListener("datastar-execute-script", function (e) {
-          appendMessage(e.data);
+          appendMessage("SSE: " + e.data);
         });
 
         eventSource.addEventListener("blenny-notification", function (e) {
-          appendMessage("NOTIFICATION: " + e.data, "blue");
+          appendMessage("SSE NOTIFICATION: " + e.data, "blue");
         });
 
         eventSource.onerror = function () {
-          appendMessage("Connection error", "red");
+          appendMessage("SSE Connection error", "red");
         };
       }
 
-      function disconnectSSE() {
+      function connectWebSocket(intent) {
+        var url = intent ? "/ws?intent=" + encodeURIComponent(intent) : "/ws";
+        var wsUrl = (window.location.protocol === 'https:' ? 'wss:' : 'ws:') +
+                   '//' + window.location.host + url;
+
+        websocket = new WebSocket(wsUrl);
+
+        websocket.onopen = function() {
+          appendMessage("WebSocket Connected to " + url, "black");
+        };
+
+        websocket.onmessage = function(e) {
+          try {
+            var msg = JSON.parse(e.data);
+            appendMessage("WS: " + JSON.stringify(msg));
+          } catch (err) {
+            appendMessage("WS: " + e.data);
+          }
+        };
+
+        websocket.onclose = function() {
+          appendMessage("WebSocket Disconnected", "red");
+        };
+
+        websocket.onerror = function() {
+          appendMessage("WebSocket Connection error", "red");
+        };
+      }
+
+      function disconnect() {
         if (eventSource) {
           eventSource.close();
           eventSource = null;
-          appendMessage("Disconnected", "red");
+          appendMessage("SSE Disconnected", "red");
+        }
+        if (websocket) {
+          websocket.close();
+          websocket = null;
+          appendMessage("WebSocket Disconnected", "red");
         }
       }
 

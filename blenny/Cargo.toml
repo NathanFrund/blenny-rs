@@ -9,7 +9,7 @@ datastar-sse = ["datastar"]
 
 [dependencies]
 blenny-macros = { path = "../blenny-macros" }
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
@@ -37,3 +37,4 @@ reqwest = { version = "0.12", features = ["json", "cookies", "stream"] }
 tokio = { version = "1", features = ["full"] }
 rstest = "0.23"
 tokio-test = "0.4"
+tokio-tungstenite = "0.21"

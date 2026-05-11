@@ -1,8 +1,11 @@
 use axum::{
     extract::{Extension, Query},
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
     http::HeaderMap,
     response::sse::{Event, KeepAlive, Sse},
+    response::IntoResponse,
 };
+use futures::{SinkExt, StreamExt};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -12,7 +15,7 @@ use tokio_stream::Stream;
 use crate::app_state::AppState;
 
 /// A message that can be sent to all connected SSE/WS clients.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ServerMessage {
     pub category: String,
     pub html: Option<String>,
@@ -98,6 +101,11 @@ impl TransportHub {
         let (tx, rx) = broadcast::channel::<ServerMessage>(64);
         self.users.write().unwrap().insert(user_id.to_string(), tx);
         rx
+    }
+
+    /// Remove a user's personal sender, stopping further direct messages.
+    pub fn unregister_user(&self, user_id: &str) {
+        self.users.write().unwrap().remove(user_id);
     }
 
     /// Send a message directly to a specific user.
@@ -203,4 +211,105 @@ pub async fn sse_handler(
             .interval(Duration::from_secs(15))
             .text("keep-alive"),
     )
+}
+
+/// WebSocket endpoint with optional intent filter.
+/// If no ?intent= query parameter is given, all message categories are sent.
+/// Authenticated users (via JWT cookie/header) also receive personal messages.
+pub async fn ws_handler(
+    ws: WebSocketUpgrade,
+    Extension(state): Extension<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    // Parse intents (same as SSE)
+    let do_server_filter = !state.encoder.filters_client_side();
+    let intents: HashSet<String> = if do_server_filter {
+        params
+            .get("intent")
+            .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
+            .unwrap_or_default()
+    } else {
+        HashSet::new()
+    };
+    let do_filter = params.get("intent").is_some();
+
+    // Authenticate user
+    let user = crate::auth::User::from_headers(&headers, &state.jwt_secret);
+
+    ws.on_upgrade(move |socket| handle_ws(socket, state, intents, do_filter, user))
+}
+
+async fn handle_ws(
+    socket: WebSocket,
+    state: Arc<AppState>,
+    intents: HashSet<String>,
+    do_filter: bool,
+    user: Option<crate::auth::User>,
+) {
+    let (mut sender, mut receiver) = socket.split();
+
+    // Subscribe to global broadcast
+    let mut global_rx = state.hub.subscribe();
+
+    // Register personal channel if authenticated
+    let mut personal_rx = user
+        .as_ref()
+        .map(|u| state.hub.register_user(&u.id));
+
+    // Task to forward messages from hub to WebSocket
+    let send_task = async move {
+        loop {
+            let msg = if let Some(ref mut personal) = personal_rx {
+                tokio::select! {
+                    global_msg = global_rx.recv() => {
+                        match global_msg {
+                            Ok(msg) => msg,
+                            Err(_) => break,
+                        }
+                    }
+                    personal_msg = personal.recv() => {
+                        match personal_msg {
+                            Ok(msg) => msg,
+                            Err(_) => break,
+                        }
+                    }
+                }
+            } else {
+                match global_rx.recv().await {
+                    Ok(msg) => msg,
+                    Err(_) => break,
+                }
+            };
+
+            // Apply intent filter
+            if do_filter && !intents.contains(&msg.category) {
+                continue;
+            }
+
+            // Serialize to JSON and send
+            let json = serde_json::to_string(&msg).unwrap();
+            if sender.send(Message::Text(json.into())).await.is_err() {
+                break;
+            }
+        }
+    };
+
+    // Receive task – just discard incoming messages (or log them)
+    let recv_task = async {
+        while let Some(Ok(_msg)) = receiver.next().await {
+            // optionally log or handle client->server messages here
+        }
+    };
+
+    // Run both tasks concurrently; whichever finishes first breaks the connection
+    tokio::select! {
+        _ = send_task => {},
+        _ = recv_task => {},
+    }
+
+    // Clean up personal sender if registered
+    if let Some(user) = user {
+        state.hub.unregister_user(&user.id);
+    }
 }

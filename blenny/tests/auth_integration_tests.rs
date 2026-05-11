@@ -1,5 +1,8 @@
 mod test_utils;
 use test_utils::{get_test_server, create_test_client, login_and_get_cookie, TestUser, make_authenticated_request};
+use tokio_tungstenite::connect_async;
+use futures::StreamExt;
+use blenny::transport::ServerMessage;
 
 #[tokio::test]
 async fn login_sets_cookie_and_redirects() {
@@ -157,6 +160,33 @@ async fn protected_routes_require_auth() {
         .await
         .unwrap();
     assert_eq!(response.status().as_u16(), 303); // redirect to login
+}
+
+#[tokio::test]
+async fn ws_receives_broadcast() {
+    let server = get_test_server().await;
+    let url = format!("ws://127.0.0.1:{}/ws", server.port());
+
+    // Connect WebSocket
+    let (ws_stream, _) = connect_async(&url).await.unwrap();
+    let (_write, mut read) = ws_stream.split();
+
+    // Trigger a broadcast
+    let client = create_test_client();
+    client
+        .get(&format!("http://127.0.0.1:{}/trigger-broadcast?category=ui", server.port()))
+        .send()
+        .await
+        .unwrap();
+
+    // Read message from WebSocket
+    let msg = read.next().await.unwrap().unwrap();
+    if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
+        let server_msg: ServerMessage = serde_json::from_str(&text).unwrap();
+        assert_eq!(server_msg.category, "ui");
+    } else {
+        panic!("Expected text message");
+    }
 }
 
 

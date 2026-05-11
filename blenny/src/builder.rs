@@ -4,7 +4,7 @@ use crate::config::BlennyConfig;
 use crate::encoder::TransportEncoder;
 use crate::middleware::AntiFragileLayer;
 use crate::module::{BlennyModule, ModuleRegistration};
-use crate::transport::{TransportHub, sse_handler};
+use crate::transport::{TransportHub, sse_handler, ws_handler};
 use crate::{AppState, Conduit};
 use axum::Router;
 use std::sync::Arc;
@@ -116,6 +116,7 @@ impl BlennyBuilder {
         // Public routes
         router = router.route("/health", axum::routing::get(|| async { "OK" }));
         router = router.route("/sse", axum::routing::get(sse_handler));
+        router = router.route("/ws", axum::routing::get(ws_handler));
 
         // Static assets
         #[cfg(debug_assertions)]
