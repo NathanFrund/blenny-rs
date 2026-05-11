@@ -182,9 +182,9 @@ blenny-rs/
 | Pluggable authentication (JWT)                           | ✅ Implemented |
 | Service bundle (`AppState`)                              | ✅ Implemented |
 | Topic‑based pub/sub for inter‑module messaging           | ✅ Implemented |
-| Connection intents (message filtering)                   | ✅ Implemented   |
-| Pluggable transport encoders                             | ✅ Implemented   |
-| Multi‑layer configuration                                | ⬜ Planned     |
+| Connection intents (message filtering)                   | ✅ Implemented |
+| Pluggable transport encoders                             | ✅ Implemented |
+| Multi‑layer configuration                                | ✅ Implemented |
 | Anti‑fragile middleware                                  | ⬜ Planned     |
 | Direct per‑user messaging                                | ⬜ Planned     |
 | Per‑route auth control (`#[public]` attribute)           | ⬜ Planned     |
