@@ -128,6 +128,13 @@ pub async fn validate_token(
         return next.run(req).await.into_response();
     }
 
+    // Check if the path is in the public routes list
+    if let Some(state) = req.extensions().get::<std::sync::Arc<crate::AppState>>() {
+        if state.public_paths.contains(path) {
+            return next.run(req).await.into_response();
+        }
+    }
+
     // Retrieve AppState from request extensions
     let state = req.extensions().get::<std::sync::Arc<crate::AppState>>().expect("AppState missing in middleware").clone();
 

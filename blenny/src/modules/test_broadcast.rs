@@ -4,6 +4,7 @@ use axum::{
     response::{Html, IntoResponse},
     routing::get,
 };
+use std::collections::HashSet;
 use std::sync::Arc;
 
 #[derive(Default)]
@@ -13,6 +14,13 @@ pub struct TestBroadcastModule;
 impl BlennyModule for TestBroadcastModule {
     fn name(&self) -> &'static str {
         "TestBroadcast"
+    }
+
+    fn public_routes(&self) -> HashSet<String> {
+        let mut routes = HashSet::new();
+        routes.insert("/test-page".to_string());
+        routes.insert("/trigger-broadcast".to_string());
+        routes
     }
 
     fn register_routes(&self, router: Router) -> Router {

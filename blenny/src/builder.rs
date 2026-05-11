@@ -60,6 +60,13 @@ impl BlennyBuilder {
             println!("Using auth provider: {}", reg.name);
         }
 
+        // ---- Collect public routes from modules ----
+        let all_public_paths: std::collections::HashSet<String> = module_regs
+            .iter()
+            .map(|(_, module)| module.public_routes())
+            .flatten()
+            .collect();
+
         // ---- Build AppState ----
         let encoder: Arc<dyn TransportEncoder> = {
             #[cfg(feature = "datastar-sse")]
@@ -78,6 +85,7 @@ impl BlennyBuilder {
             auth_provider.clone(),
             encoder,
             self.config.jwt_secret.clone(),
+            all_public_paths,
         ));
 
         // ---- Initialize modules, register routes ----

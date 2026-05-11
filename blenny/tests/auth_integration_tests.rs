@@ -111,4 +111,52 @@ async fn panic_route_returns_json_error() {
         .contains("Request handler panicked"));
 }
 
+#[tokio::test]
+async fn public_routes_accessible_without_auth() {
+    let server = get_test_server().await;
+    let client = create_test_client();
+
+    // Test /test-page is public
+    let response = client
+        .get(&format!("{}/test-page", server.base_url()))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let body = response.text().await.unwrap();
+    assert!(body.contains("SSE Connection Intents Test"));
+
+    // Test /trigger-broadcast is public
+    let response = client
+        .get(&format!("{}/trigger-broadcast", server.base_url()))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let body = response.text().await.unwrap();
+    assert!(body.contains("Sent"));
+}
+
+#[tokio::test]
+async fn protected_routes_require_auth() {
+    let server = get_test_server().await;
+    let client = create_test_client();
+
+    // Test /direct-to-me requires auth (should redirect)
+    let response = client
+        .get(&format!("{}/direct-to-me", server.base_url()))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 303); // redirect to login
+
+    // Test /panic requires auth (should redirect)
+    let response = client
+        .get(&format!("{}/panic", server.base_url()))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 303); // redirect to login
+}
+
 

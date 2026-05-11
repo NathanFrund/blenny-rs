@@ -186,8 +186,8 @@ blenny-rs/
 | Pluggable transport encoders                             | ✅ Implemented |
 | Multi‑layer configuration                                | ✅ Implemented |
 | Anti‑fragile middleware                                  | ✅ Implemented |
-| Direct per‑user messaging                                | ⬜ Planned     |
-| Per‑route auth control (`#[public]` attribute)           | ⬜ Planned     |
+| Direct per‑user messaging                                | ✅ Implemented |
+| Per‑route auth control (`#[public]` attribute)           | ✅ Implemented |
 | WebSocket sidecar                                        | ⬜ Planned     |
 | Static asset management (CSS, JS)                        | ⬜ Planned     |
 | Unified error handling (`BlennyError`)                   | ⬜ Planned     |
