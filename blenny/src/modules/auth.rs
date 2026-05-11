@@ -1,11 +1,10 @@
 use axum::{
     Extension, Router,
     extract::{Form, Query},
-    http::{StatusCode, header},
     response::{IntoResponse, Redirect},
     routing::{get, post},
 };
-use axum_extra::extract::cookie::{Cookie, CookieJar};
+use axum_extra::extract::cookie::Cookie;
 use std::sync::Arc;
 
 use crate::app_state::AppState;
@@ -36,7 +35,7 @@ impl AuthProvider for AuthModule {
     }
 
     fn protect_router(&self, router: Router) -> Router {
-        router.layer(tower::ServiceBuilder::new().layer(axum::middleware::from_fn(validate_token)))
+        router.layer(axum::middleware::from_fn(validate_token))
     }
 }
 
@@ -90,12 +89,16 @@ async fn login_submit(
             .build();
 
         // Publish a greeting to the dashboard topic
-        state.hub.publish("dashboard.greeting", format!("User {username} logged in"));
+        state
+            .hub
+            .publish("dashboard.greeting", format!("User {username} logged in"));
 
-        let mut response = Redirect::to("/dashboard").into_response();
-        response
-            .headers_mut()
-            .insert("Set-Cookie", cookie.to_string().parse().unwrap());
+        let response = axum::response::Response::builder()
+            .status(303)
+            .header("location", "/dashboard")
+            .header("set-cookie", cookie.to_string())
+            .body(axum::body::Body::empty())
+            .unwrap();
         response
     } else {
         // Redirect back to login with error (simple: just use a query param)
@@ -105,29 +108,45 @@ async fn login_submit(
 
 /// GET /logout – clears the cookie and redirects home.
 async fn logout() -> impl IntoResponse {
-    let cookie = Cookie::build(("blenny_token", ""))
-        .path("/")
-        .max_age(time::Duration::seconds(0))
-        .build();
-    let mut response = Redirect::to("/login").into_response();
-    response
-        .headers_mut()
-        .insert("Set-Cookie", cookie.to_string().parse().unwrap());
+    let response = axum::response::Response::builder()
+        .status(303)
+        .header("location", "/login")
+        .header("set-cookie", "blenny_token=; Path=/")
+        .body(axum::body::Body::empty())
+        .unwrap();
     response
 }
 
 /// Middleware that protects routes. Reads JWT from cookie or Authorization header.
-async fn validate_token(
-    jar: CookieJar,
+pub async fn validate_token(
     mut req: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
-) -> impl IntoResponse {
-    // Try cookie first
-    let token_from_cookie = jar.get("blenny_token").map(|c| c.value().to_string());
+) -> axum::response::Response {
+    // Skip auth routes
+    let path = req.uri().path();
+    if path == "/login" || path == "/logout" {
+        return next.run(req).await.into_response();
+    }
+
+    // Parse token
+    let token_from_cookie = req
+        .headers()
+        .get(axum::http::header::COOKIE)
+        .and_then(|val| val.to_str().ok())
+        .and_then(|cookies_str| {
+            cookies_str.split("; ").find_map(|cookie| {
+                let (name, value) = cookie.split_once('=')?;
+                if name.trim() == "blenny_token" {
+                    Some(value.trim().to_string())
+                } else {
+                    None
+                }
+            })
+        });
 
     let token_from_header = req
         .headers()
-        .get(header::AUTHORIZATION)
+        .get(axum::http::header::AUTHORIZATION)
         .and_then(|val| val.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer ").map(|t| t.to_string()));
 
@@ -143,25 +162,10 @@ async fn validate_token(
             req.extensions_mut().insert(User {
                 id: token_data.claims.sub,
             });
-            return next.run(req).await;
+            return next.run(req).await.into_response();
         }
     }
 
     // Not authenticated.
-    // If HTMX request, use HX-Redirect; otherwise full redirect.
-    let is_htmx = req.headers().contains_key("HX-Request");
-    if is_htmx {
-        (StatusCode::UNAUTHORIZED, [("HX-Redirect", "/login")]).into_response()
-    } else {
-        // Clear potentially bad cookie and redirect
-        let cookie = Cookie::build(("blenny_token", ""))
-            .path("/")
-            .max_age(time::Duration::seconds(0))
-            .build();
-        let mut response = Redirect::to("/login").into_response();
-        response
-            .headers_mut()
-            .insert("Set-Cookie", cookie.to_string().parse().unwrap());
-        response
-    }
+    axum::response::Redirect::to("/login").into_response()
 }

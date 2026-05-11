@@ -9,14 +9,14 @@ use std::sync::Arc;
 
 pub struct BlennyBuilder {
     pub conduit: Option<Arc<Conduit>>,
-    pub transport_hub: Arc<TransportHub>, // always present
+    pub transport_hub: Arc<TransportHub>,
 }
 
 impl BlennyBuilder {
     pub fn new() -> Self {
         BlennyBuilder {
             conduit: None,
-            transport_hub: Arc::new(TransportHub::new()), // new
+            transport_hub: Arc::new(TransportHub::new()),
         }
     }
 
@@ -26,13 +26,10 @@ impl BlennyBuilder {
     }
 
     pub fn with_default_transports(self) -> Self {
-        // Placeholder for WebSocket sidecar
         self
     }
 
     pub async fn serve(self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let mut router = Router::new();
-
         // ---- Discover modules without immediate init ----
         println!("Discovering modules...");
         let mut module_regs: Vec<(String, Box<dyn BlennyModule>)> = Vec::new();
@@ -77,22 +74,24 @@ impl BlennyBuilder {
             encoder,
         ));
 
-        // ---- Initialize modules, register routes, and keep them alive ----
+        // ---- Initialize modules, register routes ----
         let mut active_modules: Vec<Box<dyn BlennyModule>> = Vec::new();
+        let mut protected_router = Router::new();
         for (name, mut module) in module_regs {
             module.initialize_module(app_state.clone());
-            router = module.register_routes(router);
+            protected_router = module.register_routes(protected_router);
             println!("  - registered routes for module: {}", name);
             active_modules.push(module);
         }
 
         // ---- Auth layer and routes ----
+        let mut router = protected_router;
         if let Some(auth) = &app_state.auth {
-            router = auth.protect_router(router);
-            router = router.merge(auth.auth_routes());
+            router = router.merge(auth.auth_routes()); // public auth routes
+            router = auth.protect_router(router); // auth module applies its middleware
         }
 
-        // Start all modules after routes are assembled
+        // Start all modules
         for module in &active_modules {
             module.start_module();
         }
@@ -101,7 +100,7 @@ impl BlennyBuilder {
         router = router.route("/health", axum::routing::get(|| async { "OK" }));
         router = router.route("/sse", axum::routing::get(sse_handler));
 
-        // Inject AppState as an extension
+        // Inject AppState
         router = router.layer(axum::Extension(app_state.clone()));
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
