@@ -36,6 +36,8 @@ pub trait BlennyModule: Send + Sync + 'static {
 pub struct ModuleRegistration {
     pub name: &'static str,
     pub constructor: fn() -> Box<dyn BlennyModule>,
+    pub prefix: Option<&'static str>,
+    pub public_routes: &'static [&'static str],
 }
 
 inventory::collect!(ModuleRegistration);

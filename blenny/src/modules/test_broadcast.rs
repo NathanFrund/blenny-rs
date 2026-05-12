@@ -1,29 +1,17 @@
-use crate::{AppState, BlennyModule, blenny_module, transport::ServerMessage, auth::User};
+use crate::{AppState, blenny_module, transport::ServerMessage, auth::User};
 use axum::{
     Extension, Router,
     response::{Html, IntoResponse},
     routing::get,
 };
-use std::collections::HashSet;
 use std::sync::Arc;
 
 #[derive(Default)]
-#[blenny_module]
+#[blenny_module(route_handler = "test_broadcast_routes", public_routes = ["/test-page", "/trigger-broadcast"])]
 pub struct TestBroadcastModule;
 
-impl BlennyModule for TestBroadcastModule {
-    fn name(&self) -> &'static str {
-        "TestBroadcast"
-    }
-
-    fn public_routes(&self) -> HashSet<String> {
-        let mut routes = HashSet::new();
-        routes.insert("/test-page".to_string());
-        routes.insert("/trigger-broadcast".to_string());
-        routes
-    }
-
-    fn register_routes(&self, router: Router) -> Router {
+impl TestBroadcastModule {
+    fn test_broadcast_routes(router: Router) -> Router {
         router
             .route("/test-page", get(test_page))
             .route("/trigger-broadcast", get(trigger_broadcast))

@@ -9,22 +9,12 @@ use std::sync::Arc;
 
 use crate::app_state::AppState;
 use crate::auth::{AuthProvider, Claims, User};
-use crate::{BlennyModule, blenny_auth_provider, blenny_module};
+use crate::{blenny_auth_provider, blenny_module};
 
 #[derive(Default)]
-#[blenny_module]
+#[blenny_module(public_routes = ["/login", "/logout"])]
 #[blenny_auth_provider]
 pub struct AuthModule;
-
-impl BlennyModule for AuthModule {
-    fn name(&self) -> &'static str {
-        "Auth"
-    }
-    fn register_routes(&self, router: Router) -> Router {
-        // No extra routes; auth routes come from AuthProvider.
-        router
-    }
-}
 
 impl AuthProvider for AuthModule {
     fn auth_routes(&self) -> Router {
