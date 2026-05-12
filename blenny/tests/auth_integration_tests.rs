@@ -1,7 +1,9 @@
 mod test_utils;
-use test_utils::{get_test_server, create_test_client, login_and_get_cookie, TestUser, make_authenticated_request};
-use tokio_tungstenite::connect_async;
 use futures::StreamExt;
+use test_utils::{
+    TestUser, create_test_client, get_test_server, login_and_get_cookie, make_authenticated_request,
+};
+use tokio_tungstenite::{connect_async, tungstenite::client::IntoClientRequest};
 
 #[tokio::test]
 async fn login_sets_cookie_and_redirects() {
@@ -12,7 +14,10 @@ async fn login_sets_cookie_and_redirects() {
     let response = client
         .post(&format!("{}/login", server.base_url()))
         .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(format!("username={}&password={}", user.username, user.password))
+        .body(format!(
+            "username={}&password={}",
+            user.username, user.password
+        ))
         .send()
         .await
         .unwrap();
@@ -38,7 +43,8 @@ async fn dashboard_accessible_with_cookie() {
         reqwest::Method::GET,
         &format!("{}/dashboard", server.base_url()),
         &auth_cookie,
-    ).await;
+    )
+    .await;
 
     assert_eq!(dashboard_response.status().as_u16(), 200);
     let body = dashboard_response.text().await.unwrap();
@@ -82,7 +88,8 @@ async fn logout_clears_cookie() {
         reqwest::Method::GET,
         &format!("{}/logout", server.base_url()),
         &auth_cookie,
-    ).await;
+    )
+    .await;
 
     assert_eq!(logout_response.status().as_u16(), 303);
 }
@@ -107,10 +114,12 @@ async fn panic_route_returns_json_error() {
 
     let body: serde_json::Value = response.json().await.unwrap();
     assert_eq!(body["error"]["type"], "Internal");
-    assert!(body["error"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("Request handler panicked"));
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Request handler panicked")
+    );
 }
 
 #[tokio::test]
@@ -164,10 +173,17 @@ async fn protected_routes_require_auth() {
 #[tokio::test]
 async fn ws_receives_broadcast() {
     let server = get_test_server().await;
-    let url = format!("ws://127.0.0.1:{}/ws", server.port());
+    let client = create_test_client();
+    let user = TestUser::default();
 
-    // Connect WebSocket
-    let (ws_stream, _) = connect_async(&url).await.unwrap();
+    // Login and get auth cookie
+    let auth_cookie = login_and_get_cookie(&client, &server.base_url(), &user).await;
+
+    // Connect WebSocket with auth
+    let url = format!("ws://127.0.0.1:{}/ws", server.port());
+    let mut request = url.into_client_request().unwrap();
+    request.headers_mut().insert("Cookie", auth_cookie.parse().unwrap());
+    let (ws_stream, _) = connect_async(request).await.unwrap();
     let (_write, mut read) = ws_stream.split();
 
     // Test that public routes work
@@ -181,7 +197,10 @@ async fn ws_receives_broadcast() {
 
     // Trigger a broadcast (route is public)
     client
-        .get(&format!("http://127.0.0.1:{}/trigger-broadcast?category=ui", server.port()))
+        .get(&format!(
+            "http://127.0.0.1:{}/trigger-broadcast?category=ui",
+            server.port()
+        ))
         .send()
         .await
         .unwrap();
@@ -196,4 +215,14 @@ async fn ws_receives_broadcast() {
     }
 }
 
-
+#[tokio::test]
+async fn sse_rejects_unauthenticated_by_default() {
+    let server = get_test_server().await;
+    let client = create_test_client();
+    let resp = client
+        .get(&format!("{}/sse", server.base_url()))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 401);
+}

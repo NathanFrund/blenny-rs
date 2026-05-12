@@ -27,7 +27,11 @@ async fn sse_endpoint_accessible() {
         .await
         .unwrap();
     // SSE endpoint should be accessible (may require auth but endpoint exists)
-    assert!(response.status().is_success() || response.status().is_redirection() || response.status().is_client_error());
+    assert!(
+        response.status().is_success()
+            || response.status().is_redirection()
+            || response.status().is_client_error()
+    );
 }
 
 #[tokio::test]
@@ -41,12 +45,20 @@ async fn sse_intent_filter_accessible() {
         .send()
         .await
         .unwrap();
-    assert!(response_ui.status().is_success() || response_ui.status().is_redirection() || response_ui.status().is_client_error());
+    assert!(
+        response_ui.status().is_success()
+            || response_ui.status().is_redirection()
+            || response_ui.status().is_client_error()
+    );
 
     let response_data = client
         .get(format!("http://127.0.0.1:{}/sse?intent=data", port))
         .send()
         .await
         .unwrap();
-    assert!(response_data.status().is_success() || response_data.status().is_redirection() || response_data.status().is_client_error());
+    assert!(
+        response_data.status().is_success()
+            || response_data.status().is_redirection()
+            || response_data.status().is_client_error()
+    );
 }

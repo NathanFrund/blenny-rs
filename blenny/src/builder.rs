@@ -92,6 +92,7 @@ impl BlennyBuilder {
             encoder,
             self.config.jwt_secret.clone(),
             all_public_paths,
+            self.config.clone(),
         ));
 
         // ---- Auth layer and routes ----

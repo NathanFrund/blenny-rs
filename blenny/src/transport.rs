@@ -1,8 +1,8 @@
 use axum::{
     extract::{Extension, Query},
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
-    http::HeaderMap,
-    response::sse::{Event, KeepAlive, Sse},
+    http::{HeaderMap, StatusCode},
+    response::{Response, sse::{Event, KeepAlive, Sse}},
     response::IntoResponse,
 };
 use futures::{SinkExt, StreamExt};
@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::broadcast;
-use tokio_stream::Stream;
+use tokio_stream::{wrappers::BroadcastStream, StreamExt as TokioStreamExt};
 
 use crate::app_state::AppState;
 
@@ -153,7 +153,14 @@ pub async fn sse_handler(
     Extension(state): Extension<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
     headers: HeaderMap,
-) -> Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>> {
+) -> Response {
+    // Try to authenticate user
+    let user = crate::auth::User::from_headers(&headers, &state.jwt_secret);
+
+    if state.config.transport_auth_required && user.is_none() {
+        return (StatusCode::UNAUTHORIZED, "Authentication required").into_response();
+    }
+
     // Determine if we should apply server‑side intent filtering.
     let do_server_filter = !state.encoder.filters_client_side();
     let intent_param = params.get("intent");
@@ -162,61 +169,26 @@ pub async fn sse_handler(
         .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
         .unwrap_or_default();
 
-    // Try to authenticate user
-    let user = crate::auth::User::from_headers(&headers, &state.jwt_secret);
+    let global_rx = state.hub.subscribe();
 
-    // If authenticated, register personal channel
-    let mut personal_rx = if let Some(user) = user {
-        Some(state.hub.register_user(&user.id))
-    } else {
-        None
-    };
-
-    let mut global_rx = state.hub.subscribe();
-
-    let stream = async_stream::stream! {
-        loop {
-            // Check both global and personal channels
-            let msg = if let Some(ref mut personal_rx) = personal_rx {
-                // Use tokio::select! to wait for either global or personal messages
-                tokio::select! {
-                    global_msg = global_rx.recv() => {
-                        match global_msg {
-                            Ok(msg) => msg,
-                            Err(_) => continue,
-                        }
-                    }
-                    personal_msg = personal_rx.recv() => {
-                        match personal_msg {
-                            Ok(msg) => msg,
-                            Err(_) => continue,
-                        }
-                    }
-                }
+    let stream = TokioStreamExt::filter_map(BroadcastStream::new(global_rx), move |result| match result {
+        Ok(msg) => {
+            if do_server_filter && do_filter && intents.contains(&msg.category) {
+                None
             } else {
-                // Only global messages for unauthenticated users
-                match global_rx.recv().await {
-                    Ok(msg) => msg,
-                    Err(_) => continue,
-                }
-            };
-
-            // Apply server‑side filter only if the encoder doesn't handle it
-            // AND the client requested filtering via ?intent parameter.
-            if do_server_filter && do_filter && !intents.contains(&msg.category) {
-                continue;
+                Some(Ok::<Event, std::convert::Infallible>(state.encoder.to_event(&msg)))
             }
-
-            let event = state.encoder.to_event(&msg);
-            yield Ok(event);
         }
-    };
+        Err(_) => None,
+    });
+
+
 
     Sse::new(stream).keep_alive(
         KeepAlive::new()
             .interval(Duration::from_secs(15))
             .text("keep-alive"),
-    )
+    ).into_response()
 }
 
 /// WebSocket endpoint with optional intent filter.
@@ -243,6 +215,11 @@ pub async fn ws_handler(
 
     // Authenticate user
     let user = crate::auth::User::from_headers(&headers, &state.jwt_secret);
+
+    // Require authentication if configured
+    if state.config.transport_auth_required && user.is_none() {
+        return (StatusCode::UNAUTHORIZED, "Authentication required").into_response();
+    }
 
     ws.on_upgrade(move |socket| handle_ws(socket, state, intents, do_filter, user))
 }
@@ -312,7 +289,7 @@ async fn handle_ws(
 
     // Receive task – just discard incoming messages (or log them)
     let recv_task = async {
-        while let Some(Ok(_msg)) = receiver.next().await {
+        while let Some(Ok(_msg)) = futures::StreamExt::next(&mut receiver).await {
             // optionally log or handle client->server messages here
         }
     };

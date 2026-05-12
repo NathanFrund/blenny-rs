@@ -112,7 +112,10 @@ pub async fn login_and_get_cookie(client: &Client, base_url: &str, user: &TestUs
     let response = client
         .post(&format!("{}/login", base_url))
         .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(format!("username={}&password={}", user.username, user.password))
+        .body(format!(
+            "username={}&password={}",
+            user.username, user.password
+        ))
         .send()
         .await
         .unwrap();
@@ -120,7 +123,8 @@ pub async fn login_and_get_cookie(client: &Client, base_url: &str, user: &TestUs
     assert_eq!(response.status(), 303); // Should redirect after login
 
     let cookies = response.cookies().collect::<Vec<_>>();
-    let token_cookie = cookies.iter()
+    let token_cookie = cookies
+        .iter()
         .find(|c| c.name() == "blenny_token")
         .expect("Login should set blenny_token cookie");
 
@@ -167,10 +171,6 @@ impl SseTestFixture {
             None => format!("{}/sse", self.base_url),
         };
 
-        self.client
-            .get(&url)
-            .send()
-            .await
-            .unwrap()
+        self.client.get(&url).send().await.unwrap()
     }
 }

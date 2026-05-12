@@ -10,7 +10,7 @@ use serde::Deserialize;
 ///   1. BLENNY_* environment variables
 ///   2. blenny.json file
 ///   3. Rust defaults (below)
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct BlennyConfig {
     /// Server port (default: 8081)
     #[serde(default = "default_port")]
@@ -31,12 +31,17 @@ pub struct BlennyConfig {
     /// Enable WebSocket endpoint (/ws) alongside SSE.
     #[serde(default = "default_websocket")]
     pub websocket: bool,
+
+    /// Require authentication for SSE/WS transports (default: true).
+    #[serde(default = "default_transport_auth_required")]
+    pub transport_auth_required: bool,
 }
 
 fn default_port() -> u16 { 8081 }
 fn default_jwt_secret() -> String { "dev-secret".into() }
 fn default_encoder() -> String { "standard".into() }
 fn default_websocket() -> bool { false }
+fn default_transport_auth_required() -> bool { true }
 
 impl Default for BlennyConfig {
     fn default() -> Self {
@@ -46,6 +51,7 @@ impl Default for BlennyConfig {
             jwt_secret: default_jwt_secret(),
             encoder: default_encoder(),
             websocket: default_websocket(),
+            transport_auth_required: default_transport_auth_required(),
         }
     }
 }
