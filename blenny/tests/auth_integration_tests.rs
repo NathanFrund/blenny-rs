@@ -2,7 +2,6 @@ mod test_utils;
 use test_utils::{get_test_server, create_test_client, login_and_get_cookie, TestUser, make_authenticated_request};
 use tokio_tungstenite::connect_async;
 use futures::StreamExt;
-use blenny::transport::ServerMessage;
 
 #[tokio::test]
 async fn login_sets_cookie_and_redirects() {
@@ -171,8 +170,16 @@ async fn ws_receives_broadcast() {
     let (ws_stream, _) = connect_async(&url).await.unwrap();
     let (_write, mut read) = ws_stream.split();
 
-    // Trigger a broadcast
+    // Test that public routes work
     let client = create_test_client();
+    let resp = client
+        .get(&format!("http://127.0.0.1:{}/test-page", server.port()))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+
+    // Trigger a broadcast (route is public)
     client
         .get(&format!("http://127.0.0.1:{}/trigger-broadcast?category=ui", server.port()))
         .send()
@@ -182,8 +189,8 @@ async fn ws_receives_broadcast() {
     // Read message from WebSocket
     let msg = read.next().await.unwrap().unwrap();
     if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
-        let server_msg: ServerMessage = serde_json::from_str(&text).unwrap();
-        assert_eq!(server_msg.category, "ui");
+        // WebSocket sends raw HTML payload, not JSON
+        assert!(text.contains("Broadcasted ui"));
     } else {
         panic!("Expected text message");
     }

@@ -42,7 +42,11 @@ pub async fn get_test_server() -> TestServer {
     let handle = tokio::spawn(async move {
         // Use frozen Conduit for tests (no hot-reload needed)
         let conduit = Conduit::frozen().unwrap();
-        let builder = BlennyBuilder::default()
+        let config = blenny::BlennyConfig {
+            websocket: true,
+            ..blenny::BlennyConfig::default()
+        };
+        let builder = BlennyBuilder::new(config)
             .with_conduit(conduit)
             .with_default_transports();
 

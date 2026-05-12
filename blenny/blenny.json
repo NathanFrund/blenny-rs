@@ -1,6 +1,7 @@
 {
   "port": 3001,
   "jwt_secret": "production-secret-key-change-me",
-  "template_dir": "templates",
-  "encoder": "standard"
+  "template_dir": "blenny/templates",
+  "encoder": "standard",
+  "websocket": true
 }

@@ -27,11 +27,16 @@ pub struct BlennyConfig {
     /// SSE encoder: "standard" or "datastar" (future).
     #[serde(default = "default_encoder")]
     pub encoder: String,
+
+    /// Enable WebSocket endpoint (/ws) alongside SSE.
+    #[serde(default = "default_websocket")]
+    pub websocket: bool,
 }
 
 fn default_port() -> u16 { 8081 }
 fn default_jwt_secret() -> String { "dev-secret".into() }
 fn default_encoder() -> String { "standard".into() }
+fn default_websocket() -> bool { false }
 
 impl Default for BlennyConfig {
     fn default() -> Self {
@@ -40,6 +45,7 @@ impl Default for BlennyConfig {
             template_dir: None,
             jwt_secret: default_jwt_secret(),
             encoder: default_encoder(),
+            websocket: default_websocket(),
         }
     }
 }

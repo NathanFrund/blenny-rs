@@ -61,11 +61,18 @@ impl BlennyBuilder {
         }
 
         // ---- Collect public routes from modules ----
-        let all_public_paths: std::collections::HashSet<String> = module_regs
+        let mut all_public_paths: std::collections::HashSet<String> = module_regs
             .iter()
             .map(|(_, module)| module.public_routes())
             .flatten()
             .collect();
+
+        // Add infrastructure public paths
+        all_public_paths.insert("/health".to_string());
+        all_public_paths.insert("/sse".to_string());
+        if self.config.websocket {
+            all_public_paths.insert("/ws".to_string());
+        }
 
         // ---- Build AppState ----
         let encoder: Arc<dyn TransportEncoder> = {
@@ -88,9 +95,9 @@ impl BlennyBuilder {
             all_public_paths,
         ));
 
-        // ---- Initialize modules, register routes ----
-        let mut active_modules: Vec<Box<dyn BlennyModule>> = Vec::new();
+        // ---- Auth layer and routes ----
         let mut protected_router = Router::new();
+        let mut active_modules: Vec<Box<dyn BlennyModule>> = Vec::new();
         for (name, mut module) in module_regs {
             module.initialize_module(app_state.clone());
             protected_router = module.register_routes(protected_router);
@@ -98,34 +105,37 @@ impl BlennyBuilder {
             active_modules.push(module);
         }
 
-        // ---- Auth layer and routes ----
-        let mut router = protected_router;
-        if let Some(auth) = &app_state.auth {
-            router = router.merge(auth.auth_routes()); // public auth routes
-            router = auth.protect_router(router); // auth module applies its middleware
-        }
-
-        // Apply anti-fragile middleware to module routes
-        router = router.layer(AntiFragileLayer);
-
-        // Start all modules
+        // Start all modules (they can start background tasks)
         for module in &active_modules {
             module.start_module();
         }
 
-        // Public routes
+        // ---- Build final router ----
+        let mut router = Router::new();
+
+        // Public infrastructure routes (no auth)
         router = router.route("/health", axum::routing::get(|| async { "OK" }));
         router = router.route("/sse", axum::routing::get(sse_handler));
-        router = router.route("/ws", axum::routing::get(ws_handler));
-
-        // Static assets
+        if self.config.websocket {
+            router = router.route("/ws", axum::routing::get(ws_handler));
+        }
+        // Static assets (dev only)
         #[cfg(debug_assertions)]
         {
-            router = router.nest_service(
-                "/static",
-                ServeDir::new("static"),
-            );
+            router = router.nest_service("/static", ServeDir::new("static"));
         }
+
+        // Apply auth layer to module routes only
+        if let Some(auth) = &app_state.auth {
+            protected_router = protected_router.merge(auth.auth_routes());
+            protected_router = auth.protect_router(protected_router);
+        }
+
+        // Anti-fragile middleware for module routes
+        protected_router = protected_router.layer(AntiFragileLayer);
+
+        // Merge protected module routes into the main router
+        router = router.merge(protected_router);
 
         // Inject AppState
         router = router.layer(axum::Extension(app_state.clone()));

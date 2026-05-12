@@ -216,6 +216,7 @@ pub async fn sse_handler(
 /// WebSocket endpoint with optional intent filter.
 /// If no ?intent= query parameter is given, all message categories are sent.
 /// Authenticated users (via JWT cookie/header) also receive personal messages.
+/// Sends raw HTML or data payloads – not JSON‑wrapped.
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     Extension(state): Extension<Arc<AppState>>,
@@ -287,9 +288,17 @@ async fn handle_ws(
                 continue;
             }
 
-            // Serialize to JSON and send
-            let json = serde_json::to_string(&msg).unwrap();
-            if sender.send(Message::Text(json.into())).await.is_err() {
+            // Extract raw payload – html takes precedence, then signals
+            let payload = if let Some(html) = &msg.html {
+                html.clone()
+            } else if let Some(signals) = &msg.signals {
+                signals.clone()
+            } else {
+                continue; // nothing to send
+            };
+
+            // Send as a text frame
+            if sender.send(Message::Text(payload.into())).await.is_err() {
                 break;
             }
         }
