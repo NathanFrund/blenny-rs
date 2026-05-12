@@ -6,6 +6,7 @@ edition = "2024"
 [features]
 default = []
 datastar-sse = ["datastar"]
+surreal = ["surrealdb"]
 
 [dependencies]
 blenny-macros = { path = "../blenny-macros" }
@@ -27,6 +28,7 @@ axum-extra = { version = "0.12", features = ["cookie"] }
 cookie = "0.18"
 time = "0.3"
 datastar = { version = "0.3", optional = true }
+surrealdb = { version = "2", optional = true }
 figment = { version = "0.10", features = ["json", "env"] }
 thiserror = "2"
 mime_guess = "2"

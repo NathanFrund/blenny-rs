@@ -10,6 +10,11 @@ use axum::Router;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
 
+#[cfg(feature = "surreal")]
+use surrealdb::Surreal;
+#[cfg(feature = "surreal")]
+use surrealdb::engine::remote::ws::Client;
+
 pub struct BlennyBuilder {
     pub conduit: Option<Arc<Conduit>>,
     pub transport_hub: Arc<TransportHub>,
@@ -60,6 +65,30 @@ impl BlennyBuilder {
             println!("Using auth provider: {}", reg.name);
         }
 
+        // ---- Optional SurrealDB connection ----
+        #[cfg(feature = "surreal")]
+        let surrealdb = if let Some(url) = &self.config.database_url {
+            match Surreal::new::<Client>(()).await {
+                Ok(db) => {
+                    db.connect::<surrealdb::engine::remote::ws::Ws>(url.clone())
+                        .await
+                        .unwrap_or_else(|e| {
+                            eprintln!("Failed to connect to SurrealDB: {e}");
+                            panic!("Cannot start without SurrealDB connection");
+                        });
+                    db.use_ns("blenny").use_db("blenny").await.unwrap();
+                    println!("Connected to SurrealDB at {}", url);
+                    Some(Arc::new(db))
+                }
+                Err(e) => {
+                    eprintln!("Failed to create SurrealDB client: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         // ---- Collect public routes from modules ----
         let mut all_public_paths: std::collections::HashSet<String> = module_regs
             .iter()
@@ -85,6 +114,19 @@ impl BlennyBuilder {
             }
         };
 
+        #[cfg(feature = "surreal")]
+        let app_state = Arc::new(AppState::new(
+            self.conduit.clone(),
+            self.transport_hub.clone(),
+            auth_provider.clone(),
+            encoder,
+            self.config.jwt_secret.clone(),
+            all_public_paths,
+            self.config.clone(),
+            surrealdb,
+        ));
+
+        #[cfg(not(feature = "surreal"))]
         let app_state = Arc::new(AppState::new(
             self.conduit.clone(),
             self.transport_hub.clone(),

@@ -120,6 +120,7 @@ For the rare case where a fully public transport is desired
   - `jwt_secret` (String) – signing secret for JWT tokens
   - `encoder` (String) – `"standard"` or `"datastar"`; selects the SSE transport encoder
   - `websocket` (bool) – if `true`, the `/ws` endpoint is active (default `false`). When `false`, only SSE is available.
+  - `database_url` (Option<String>) – when the `surreal` feature is active, the URL of the SurrealDB instance to connect to. If absent, no client is created.
 - The `figment` crate is used to merge the sources, matching the original Blenny’s composite configuration provider.
 
 ### Middleware (Anti‑Fragile)
@@ -196,6 +197,7 @@ For the rare case where a fully public transport is desired
 - **chrono** – timestamps for JWT
 - **figment** – multi‑layer configuration
 - **thiserror** – error handling
+- **surrealdb** (optional) – SurrealDB client behind the `surreal` feature flag
 
 ## 🧭 Roadmap & Implementation Status
 
@@ -215,6 +217,7 @@ For the rare case where a fully public transport is desired
 | Anti‑fragile middleware                                  | ✅ Implemented |
 | Direct per‑user messaging                                | ✅ Implemented |
 | Per‑route auth control (`public_routes()`)               | ✅ Implemented |
+| SurrealDB integration (client connection)                | ✅ Implemented |
 | Static asset management (CSS, JS)                        | ✅ Implemented |
 | WebSocket sidecar (opt‑in via config)                    | ✅ Implemented |
 | Unified error handling (`BlennyError`)                   | ✅ Implemented |

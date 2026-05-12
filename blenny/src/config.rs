@@ -35,6 +35,11 @@ pub struct BlennyConfig {
     /// Require authentication for SSE/WS transports (default: true).
     #[serde(default = "default_transport_auth_required")]
     pub transport_auth_required: bool,
+
+    /// URL of the SurrealDB instance to connect to (e.g., "ws://localhost:8000" or "https://cloud.surrealdb.com").
+    /// Requires the `surreal` feature flag.
+    #[serde(default)]
+    pub database_url: Option<String>,
 }
 
 fn default_port() -> u16 { 8081 }
@@ -52,6 +57,7 @@ impl Default for BlennyConfig {
             encoder: default_encoder(),
             websocket: default_websocket(),
             transport_auth_required: default_transport_auth_required(),
+            database_url: None,
         }
     }
 }

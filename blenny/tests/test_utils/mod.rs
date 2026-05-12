@@ -34,6 +34,32 @@ impl Drop for TestServer {
     }
 }
 
+/// Create and start a fresh test server with custom config for each test
+pub async fn get_test_server_with_config(config: blenny::BlennyConfig) -> TestServer {
+    let port = get_random_port();
+    let addr = format!("127.0.0.1:{}", port);
+
+    let handle = tokio::spawn(async move {
+        // Use frozen Conduit for tests (no hot-reload needed)
+        let conduit = Conduit::frozen().unwrap();
+        let builder = BlennyBuilder::new(config)
+            .with_conduit(conduit)
+            .with_default_transports();
+
+        if let Err(e) = builder.serve(&addr).await {
+            eprintln!("Test server error: {}", e);
+        }
+    });
+
+    // Wait for server to be ready - increased timeout for reliability
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    TestServer {
+        port,
+        _handle: handle,
+    }
+}
+
 /// Create and start a fresh test server for each test
 pub async fn get_test_server() -> TestServer {
     let port = get_random_port();
