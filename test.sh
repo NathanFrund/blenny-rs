@@ -91,6 +91,16 @@ case "${1:-all}" in
         print_info "Starting test watcher..."
         cargo watch -x test
         ;;
+    "surreal")
+        if [ -z "$SURREALDB_URL" ]; then
+            print_info "SURREALDB_URL not set, defaulting to ws://localhost:8000"
+            export SURREALDB_URL="ws://localhost:8000"
+        fi
+        print_info "Running SurrealDB integration tests against $SURREALDB_URL"
+        print_info "Make sure a SurrealDB instance is running (e.g., surreal start --user root --pass root memory)"
+        cargo test --features surreal --test surrealdb_integration -- --nocapture
+        print_success "SurrealDB integration tests passed!"
+        ;;
     "help"|*)
         echo "Blenny Test Runner"
         echo ""
@@ -106,12 +116,14 @@ case "${1:-all}" in
         echo "  coverage     Generate test coverage report (requires cargo-tarpaulin)"
         echo "  clean        Clean build artifacts"
         echo "  watch        Watch for changes and run tests (requires cargo-watch)"
+        echo "  surreal      Run SurrealDB integration tests (requires running DB)"
         echo "  help         Show this help message"
         echo ""
         echo "Examples:"
         echo "  $0 all          # Run all tests"
         echo "  $0 unit         # Run only unit tests"
         echo "  $0 integration  # Run only integration tests"
+        echo "  $0 surreal      # Run SurrealDB integration tests"
         echo "  $0 watch        # Watch mode for TDD"
         ;;
 esac

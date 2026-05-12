@@ -3,14 +3,17 @@
 //! This module provides common fixtures, helpers, and utilities to make
 //! testing easier and more consistent across the codebase.
 
-use blenny::{BlennyBuilder, Conduit};
+use blenny::{AppState, BlennyBuilder, Conduit};
 use reqwest::{Client, redirect};
 use std::net::TcpListener;
+use std::sync::Arc;
+use tokio::sync::OnceCell;
 
 /// Test server fixture that manages a single server instance
 /// for the duration of all integration tests
 pub struct TestServer {
     port: u16,
+    app_state: tokio::sync::OnceCell<Arc<AppState>>,
     _handle: tokio::task::JoinHandle<()>,
 }
 
@@ -24,6 +27,11 @@ impl TestServer {
     /// Get the base URL for the server
     pub fn base_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.port)
+    }
+
+    /// Get the AppState from the running server
+    pub async fn app_state(&self) -> Arc<AppState> {
+        self.app_state.get().expect("AppState not set").clone()
     }
 }
 
@@ -39,23 +47,27 @@ pub async fn get_test_server_with_config(config: blenny::BlennyConfig) -> TestSe
     let port = get_random_port();
     let addr = format!("127.0.0.1:{}", port);
 
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
     let handle = tokio::spawn(async move {
         // Use frozen Conduit for tests (no hot-reload needed)
         let conduit = Conduit::frozen().unwrap();
         let builder = BlennyBuilder::new(config)
             .with_conduit(conduit)
-            .with_default_transports();
+            .with_default_transports()
+            .with_app_state_sender(tx);
 
         if let Err(e) = builder.serve(&addr).await {
             eprintln!("Test server error: {}", e);
         }
     });
 
-    // Wait for server to be ready - increased timeout for reliability
-    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    // Wait for AppState to be sent
+    let app_state = rx.recv().await.expect("Failed to receive AppState");
 
     TestServer {
         port,
+        app_state: OnceCell::from(app_state),
         _handle: handle,
     }
 }
@@ -86,6 +98,7 @@ pub async fn get_test_server() -> TestServer {
 
     TestServer {
         port,
+        app_state: OnceCell::new(), // AppState can be injected in future tests if needed
         _handle: handle,
     }
 }

@@ -13,12 +13,13 @@ use tower_http::services::ServeDir;
 #[cfg(feature = "surreal")]
 use surrealdb::Surreal;
 #[cfg(feature = "surreal")]
-use surrealdb::engine::remote::ws::Client;
+use surrealdb::engine::remote::ws::Ws;
 
 pub struct BlennyBuilder {
     pub conduit: Option<Arc<Conduit>>,
     pub transport_hub: Arc<TransportHub>,
     config: BlennyConfig,
+    app_state_sender: Option<tokio::sync::mpsc::UnboundedSender<Arc<AppState>>>,
 }
 
 impl BlennyBuilder {
@@ -27,6 +28,7 @@ impl BlennyBuilder {
             conduit: None,
             transport_hub: Arc::new(TransportHub::new()),
             config,
+            app_state_sender: None,
         }
     }
 
@@ -36,6 +38,14 @@ impl BlennyBuilder {
     }
 
     pub fn with_default_transports(self) -> Self {
+        self
+    }
+
+    pub fn with_app_state_sender(
+        mut self,
+        sender: tokio::sync::mpsc::UnboundedSender<Arc<AppState>>,
+    ) -> Self {
+        self.app_state_sender = Some(sender);
         self
     }
 
@@ -67,21 +77,31 @@ impl BlennyBuilder {
 
         // ---- Optional SurrealDB connection ----
         #[cfg(feature = "surreal")]
-        let surrealdb = if let Some(url) = &self.config.database_url {
-            match Surreal::new::<Client>(()).await {
+        let surrealdb = if let Some(raw_url) = &self.config.database_url {
+            let url = raw_url
+                .strip_prefix("ws://")
+                .or_else(|| raw_url.strip_prefix("wss://"))
+                .unwrap_or(raw_url)
+                .to_string();
+
+            match Surreal::new::<Ws>(url).await {
                 Ok(db) => {
-                    db.connect::<surrealdb::engine::remote::ws::Ws>(url.clone())
+                    if let Err(e) = db
+                        .signin(surrealdb::opt::auth::Root {
+                            username: "root".into(),
+                            password: "root".into(),
+                        })
                         .await
-                        .unwrap_or_else(|e| {
-                            eprintln!("Failed to connect to SurrealDB: {e}");
-                            panic!("Cannot start without SurrealDB connection");
-                        });
+                    {
+                        eprintln!("Root sign-in failed (continuing): {e}");
+                    }
+
                     db.use_ns("blenny").use_db("blenny").await.unwrap();
-                    println!("Connected to SurrealDB at {}", url);
+                    println!("Connected to SurrealDB at {}", raw_url);
                     Some(Arc::new(db))
                 }
                 Err(e) => {
-                    eprintln!("Failed to create SurrealDB client: {e}");
+                    eprintln!("Failed to connect to SurrealDB: {e}");
                     None
                 }
             }
@@ -136,6 +156,10 @@ impl BlennyBuilder {
             all_public_paths,
             self.config.clone(),
         ));
+
+        if let Some(sender) = &self.app_state_sender {
+            let _ = sender.send(app_state.clone());
+        }
 
         // ---- Auth layer and routes ----
         let mut protected_router = Router::new();

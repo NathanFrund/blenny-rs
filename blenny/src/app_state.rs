@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 #[cfg(feature = "surreal")]
 use surrealdb::Surreal;
+
 #[cfg(feature = "surreal")]
 use surrealdb::engine::remote::ws::Client;
 
