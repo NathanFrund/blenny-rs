@@ -78,6 +78,34 @@ blenny-rs/
 - **WebSocket Sidecar (opt‑in):** When `websocket: true` is set in the configuration, the builder mounts a `/ws` endpoint. The WebSocket handler shares the same `TransportHub` – authenticated users automatically receive their personal channel, and intent filtering is applied identically to SSE. The feature is **disabled by default**; enabling it has no effect on the existing HTTP/SSE surface.
 - **Backpressure:** Tokio’s broadcast channel drops messages for slow consumers. The buffer size is currently fixed (256); future enhancement will make it configurable and log warnings on drops.
 
+### Transport Security Model
+
+Blenny‑rs real‑time transports (`/sse`, `/ws`) require
+authentication **by default**. A connection without a valid JWT
+(cookie or `Authorization` header) is immediately rejected with
+a `401 Unauthorized`.
+
+This matches the **Pharo Blenny reference implementation** and is
+grounded in a simple design principle:
+
+> Identity is a prerequisite for real‑time messaging. Knowing
+> _who_ is connected is more important than knowing _what_ they
+> can access.
+
+- The transport layer establishes identity.
+- Module code (via `broadcast_html` vs `direct_html_to_user`)
+  controls visibility.
+- Public broadcasts are still possible – an authenticated user
+  with a known identity can subscribe to a public dashboard
+  stream.
+- The old “public by default” model is rejected in favor of
+  **secure by default**, consistent across both the Pharo and
+  Rust implementations.
+
+For the rare case where a fully public transport is desired
+(e.g., a live sports scoreboard), the configuration flag
+`transport_auth_required` can be set to `false`.
+
 ### Configuration System
 
 - Configuration is built from four layers, merged in priority order:
@@ -137,6 +165,9 @@ blenny-rs/
       pub public_paths: HashSet<String>,
   }
   ```
+
+```
+
 - Handlers extract `Extension<Arc<AppState>>` and access only the fields they need.
 
 ### Error Handling Strategy
@@ -224,3 +255,4 @@ Blenny‑rs is not a direct copy of the Smalltalk implementation; it’s a re‑
 - **Static Assets Clarification:** Conduit is for templates only; a separate `StaticAssets` component handles CSS/JS (implemented with hot‑reload and embedding).
 - **Datastar Simplification:** When the Datastar encoder is active, connection‑intent filtering moves from the server to the client, eliminating the need for the `?intent=` query parameter on that endpoint.
 - **WebSocket Configurability:** The WebSocket sidecar is toggled via `websocket: true` in the configuration; when disabled, only SSE is available, preserving the original Blenny’s optional‑transport design.
+```
