@@ -143,7 +143,6 @@ mod surrealdb_tests {
         db.query("CREATE person SET name = 'Tobie'").await.unwrap();
         db.query("CREATE person SET name = 'Jaime'").await.unwrap();
 
-        let mut result = db.query("SELECT count() FROM person").await.unwrap();
         let people: Vec<serde_json::Value> = db.select("person").await.unwrap();
         assert_eq!(people.len(), 2);
 

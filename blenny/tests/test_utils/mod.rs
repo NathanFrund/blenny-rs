@@ -10,7 +10,8 @@ use std::sync::Arc;
 use tokio::sync::OnceCell;
 
 /// Test server fixture that manages a single server instance
-/// for the duration of all integration tests
+/// for the duration of all integration tests in this module.
+#[allow(dead_code)]
 pub struct TestServer {
     port: u16,
     app_state: tokio::sync::OnceCell<Arc<AppState>>,
@@ -147,6 +148,7 @@ impl TestUser {
 }
 
 /// Helper to perform login and return the auth cookie
+#[allow(dead_code)]
 pub async fn login_and_get_cookie(client: &Client, base_url: &str, user: &TestUser) -> String {
     let response = client
         .post(&format!("{}/login", base_url))
@@ -171,6 +173,7 @@ pub async fn login_and_get_cookie(client: &Client, base_url: &str, user: &TestUs
 }
 
 /// Helper to make authenticated requests
+#[allow(dead_code)]
 pub async fn make_authenticated_request(
     client: &Client,
     method: reqwest::Method,
