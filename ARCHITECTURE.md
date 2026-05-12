@@ -185,7 +185,7 @@ blenny-rs/
 | Direct per‑user messaging                                | ✅ Implemented |
 | Per‑route auth control (`public_routes()`)               | ✅ Implemented |
 | Static asset management (CSS, JS)                        | ✅ Implemented |
-| WebSocket sidecar (opt‑in via config)                    | ⬜ Planned     |
+| WebSocket sidecar (opt‑in via config)                    | ✅ Implemented |
 | Unified error handling (`BlennyError`)                   | ✅ Implemented |
 | SurrealDB integration                                    | ⬜ Planned     |
 | Dev‑friendly proc‑macro improvements (path prefix, etc.) | ⬜ Planned     |

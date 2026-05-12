@@ -47,13 +47,13 @@ where
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let future = self.inner.call(req);
         Box::pin(async move {
-            let result = tokio::task::spawn(future)
+            
+            tokio::task::spawn(future)
                 .await
                 .unwrap_or_else(|_| {
                     // Panic caught: return 500
                     Ok(BlennyError::Internal("Request handler panicked".into()).into_response())
-                });
-            result
+                })
         })
     }
 }

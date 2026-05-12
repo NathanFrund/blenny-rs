@@ -63,8 +63,7 @@ impl BlennyBuilder {
         // ---- Collect public routes from modules ----
         let mut all_public_paths: std::collections::HashSet<String> = module_regs
             .iter()
-            .map(|(_, module)| module.public_routes())
-            .flatten()
+            .flat_map(|(_, module)| module.public_routes())
             .collect();
 
         // Add infrastructure public paths

@@ -93,13 +93,13 @@ async fn login_submit(
             .hub
             .publish("dashboard.greeting", format!("User {username} logged in"));
 
-        let response = axum::response::Response::builder()
+        
+        axum::response::Response::builder()
             .status(303)
             .header("location", "/dashboard")
             .header("set-cookie", cookie.to_string())
             .body(axum::body::Body::empty())
-            .unwrap();
-        response
+            .unwrap()
     } else {
         // Redirect back to login with error (simple: just use a query param)
         Redirect::to("/login?error=Invalid+credentials").into_response()
@@ -108,13 +108,13 @@ async fn login_submit(
 
 /// GET /logout – clears the cookie and redirects home.
 async fn logout() -> impl IntoResponse {
-    let response = axum::response::Response::builder()
+    
+    axum::response::Response::builder()
         .status(303)
         .header("location", "/login")
         .header("set-cookie", "blenny_token=; Path=/")
         .body(axum::body::Body::empty())
-        .unwrap();
-    response
+        .unwrap()
 }
 
 /// Middleware that protects routes. Reads JWT from cookie or Authorization header.
@@ -129,11 +129,10 @@ pub async fn validate_token(
     }
 
     // Check if the path is in the public routes list
-    if let Some(state) = req.extensions().get::<std::sync::Arc<crate::AppState>>() {
-        if state.public_paths.contains(path) {
+    if let Some(state) = req.extensions().get::<std::sync::Arc<crate::AppState>>()
+        && state.public_paths.contains(path) {
             return next.run(req).await.into_response();
         }
-    }
 
     // Retrieve AppState from request extensions
     let state = req.extensions().get::<std::sync::Arc<crate::AppState>>().expect("AppState missing in middleware").clone();

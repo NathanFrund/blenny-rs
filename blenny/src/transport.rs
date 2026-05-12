@@ -33,6 +33,12 @@ pub struct TransportHub {
     users: Arc<RwLock<HashMap<String, broadcast::Sender<ServerMessage>>>>,
 }
 
+impl Default for TransportHub {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TransportHub {
     pub fn new() -> Self {
         let (tx, _rx) = broadcast::channel::<ServerMessage>(256);
@@ -233,7 +239,7 @@ pub async fn ws_handler(
     } else {
         HashSet::new()
     };
-    let do_filter = params.get("intent").is_some();
+    let do_filter = params.contains_key("intent");
 
     // Authenticate user
     let user = crate::auth::User::from_headers(&headers, &state.jwt_secret);

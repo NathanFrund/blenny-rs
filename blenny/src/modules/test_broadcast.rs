@@ -53,7 +53,7 @@ async fn trigger_broadcast(
             None,
             Some(format!(
                 r#"{{"stock":"BLEN","price":{},"ts":"{}"}}"#,
-                (42).to_string(),
+                (42),
                 ts
             )),
         ),
