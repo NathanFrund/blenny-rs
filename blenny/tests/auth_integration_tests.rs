@@ -123,32 +123,6 @@ async fn panic_route_returns_json_error() {
 }
 
 #[tokio::test]
-async fn public_routes_accessible_without_auth() {
-    let server = get_test_server().await;
-    let client = create_test_client();
-
-    // Test /test-page is public
-    let response = client
-        .get(&format!("{}/test-page", server.base_url()))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status().as_u16(), 200);
-    let body = response.text().await.unwrap();
-    assert!(body.contains("SSE Connection Intents Test"));
-
-    // Test /trigger-broadcast is public
-    let response = client
-        .get(&format!("{}/trigger-broadcast", server.base_url()))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status().as_u16(), 200);
-    let body = response.text().await.unwrap();
-    assert!(body.contains("Sent"));
-}
-
-#[tokio::test]
 async fn protected_routes_require_auth() {
     let server = get_test_server().await;
     let client = create_test_client();
@@ -182,33 +156,32 @@ async fn ws_receives_broadcast() {
     // Connect WebSocket with auth
     let url = format!("ws://127.0.0.1:{}/ws", server.port());
     let mut request = url.into_client_request().unwrap();
-    request.headers_mut().insert("Cookie", auth_cookie.parse().unwrap());
+    request
+        .headers_mut()
+        .insert("Cookie", auth_cookie.parse().unwrap());
     let (ws_stream, _) = connect_async(request).await.unwrap();
     let (_write, mut read) = ws_stream.split();
 
-    // Test that public routes work
-    let client = create_test_client();
-    let resp = client
-        .get(&format!("http://127.0.0.1:{}/test-page", server.port()))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status().as_u16(), 200);
-
-    // Trigger a broadcast (route is public)
-    client
-        .get(&format!(
-            "http://127.0.0.1:{}/trigger-broadcast?category=ui",
-            server.port()
-        ))
+    // Trigger a broadcast (route is protected, but we are authenticated)
+    let trigger_url = format!(
+        "http://127.0.0.1:{}/trigger-broadcast?category=ui",
+        server.port()
+    );
+    let _resp = client
+        .get(&trigger_url)
+        .header("Cookie", &auth_cookie)
         .send()
         .await
         .unwrap();
 
     // Read message from WebSocket
-    let msg = read.next().await.unwrap().unwrap();
+    let msg = tokio::time::timeout(std::time::Duration::from_secs(5), read.next())
+        .await
+        .expect("Timeout waiting for WS message")
+        .expect("WS stream ended")
+        .expect("WS message error");
+
     if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
-        // WebSocket sends raw HTML payload, not JSON
         assert!(text.contains("Broadcasted ui"));
     } else {
         panic!("Expected text message");

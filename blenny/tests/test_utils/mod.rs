@@ -31,6 +31,7 @@ impl TestServer {
     }
 
     /// Get the AppState from the running server
+    #[allow(dead_code)]
     pub async fn app_state(&self) -> Arc<AppState> {
         self.app_state.get().expect("AppState not set").clone()
     }
@@ -44,6 +45,7 @@ impl Drop for TestServer {
 }
 
 /// Create and start a fresh test server with custom config for each test
+#[allow(dead_code)]
 pub async fn get_test_server_with_config(config: blenny::BlennyConfig) -> TestServer {
     let port = get_random_port();
     let addr = format!("127.0.0.1:{}", port);

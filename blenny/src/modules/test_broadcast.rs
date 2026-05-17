@@ -1,4 +1,4 @@
-use crate::{AppState, blenny_module, transport::ServerMessage, auth::User};
+use crate::{AppState, auth::User, blenny_module, transport::ServerMessage};
 use axum::{
     Extension, Router,
     response::{Html, IntoResponse},
@@ -7,7 +7,7 @@ use axum::{
 use std::sync::Arc;
 
 #[derive(Default)]
-#[blenny_module(route_handler = "test_broadcast_routes", public_routes = ["/test-page", "/trigger-broadcast"])]
+#[blenny_module(route_handler = "test_broadcast_routes")]
 pub struct TestBroadcastModule;
 
 impl TestBroadcastModule {
@@ -70,6 +70,8 @@ async fn direct_to_me_handler(
     Extension(state): Extension<Arc<AppState>>,
     Extension(user): Extension<User>,
 ) -> impl IntoResponse {
-    state.hub.direct_html_to_user(&user.id, "<p>Direct message!</p>");
+    state
+        .hub
+        .direct_html_to_user(&user.id, "<p>Direct message!</p>");
     "Sent direct message"
 }

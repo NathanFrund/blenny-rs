@@ -1,20 +1,19 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    Expr, ExprArray, Ident, ItemStruct, Lit, LitBool, LitStr, Token,
+    Expr, Ident, ItemStruct, Lit, LitBool, LitStr, Token,
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
     spanned::Spanned,
 };
 
-/// Parsed attributes: #[blenny_module(route_handler = "...", path = "...", scope = "...", enable = ..., public_routes = [...], initialize_handler = "...")]
+/// Parsed attributes: #[blenny_module(route_handler = "...", path = "...", scope = "...", enable = ..., initialize_handler = "...")]
 struct BlennyModuleAttrs {
     path: Option<LitStr>,
     scope: Option<LitStr>,
     route_handler: Option<LitStr>,
     enable: Option<LitBool>,
-    public_routes: Option<ExprArray>,
     initialize_handler: Option<LitStr>,
 }
 
@@ -24,7 +23,6 @@ impl Parse for BlennyModuleAttrs {
         let mut scope = None;
         let mut route_handler = None;
         let mut enable = None;
-        let mut public_routes = None;
         let mut initialize_handler = None;
 
         let metas: Punctuated<syn::Meta, Token![,]> =
@@ -113,26 +111,6 @@ impl Parse for BlennyModuleAttrs {
                 } else {
                     return Err(syn::Error::new(meta.span(), "expected enable = true/false"));
                 }
-            } else if meta.path().is_ident("public_routes") {
-                if let syn::Meta::NameValue(nv) = meta {
-                    if let Expr::Array(arr) = &nv.value {
-                        public_routes = Some(ExprArray {
-                            attrs: vec![],
-                            bracket_token: syn::token::Bracket::default(),
-                            elems: arr.elems.clone(),
-                        });
-                    } else {
-                        return Err(syn::Error::new(
-                            nv.value.span(),
-                            "expected array literal for public_routes",
-                        ));
-                    }
-                } else {
-                    return Err(syn::Error::new(
-                        meta.span(),
-                        "expected public_routes = [...]",
-                    ));
-                }
             } else if meta.path().is_ident("initialize_handler") {
                 if let syn::Meta::NameValue(nv) = meta {
                     if let Expr::Lit(expr_lit) = &nv.value {
@@ -165,7 +143,6 @@ impl Parse for BlennyModuleAttrs {
             scope,
             route_handler,
             enable,
-            public_routes,
             initialize_handler,
         })
     }
@@ -185,36 +162,6 @@ pub fn blenny_module(attr: TokenStream, item: TokenStream) -> TokenStream {
     let prefix_tokens = prefix
         .map(|p| quote! { Some(#p) })
         .unwrap_or_else(|| quote! { None });
-
-    let public_routes: Vec<String> = attrs
-        .public_routes
-        .map(|arr| {
-            arr.elems
-                .into_iter()
-                .filter_map(|e| {
-                    if let syn::Expr::Lit(el) = e {
-                        if let syn::Lit::Str(s) = el.lit {
-                            return Some(s.value());
-                        }
-                    }
-                    None
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let public_routes_tokens = if public_routes.is_empty() {
-        quote! { &[] as &[&str] }
-    } else {
-        let strings: Vec<proc_macro2::TokenStream> = public_routes
-            .iter()
-            .map(|s| {
-                let s = s.as_str();
-                quote! { #s }
-            })
-            .collect();
-        quote! { &[#(#strings),*] as &[&str] }
-    };
 
     let enabled_tokens = attrs.enable.map_or(quote! { true }, |b| {
         let val = b.value;
@@ -239,31 +186,6 @@ pub fn blenny_module(attr: TokenStream, item: TokenStream) -> TokenStream {
         },
     );
 
-    // Optional: use LazyLock for public routes performance
-    let public_routes_method = if public_routes.is_empty() {
-        quote! {
-            fn public_routes(&self) -> std::collections::HashSet<String> {
-                std::collections::HashSet::new()
-            }
-        }
-    } else {
-        // Generate a static HashSet using LazyLock (Rust 1.80+)
-        let inserts = public_routes.iter().map(|s| {
-            quote! { set.insert(#s.to_string()); }
-        });
-        quote! {
-            fn public_routes(&self) -> std::collections::HashSet<String> {
-                use std::sync::LazyLock;
-                static ROUTES: std::sync::LazyLock<std::collections::HashSet<String>> = std::sync::LazyLock::new(|| {
-                    let mut set = std::collections::HashSet::new();
-                    #(#inserts)*
-                    set
-                });
-                ROUTES.clone()
-            }
-        }
-    };
-
     let initialize_method = attrs.initialize_handler.map_or_else(|| quote! {}, |init_str| {
         let init_ident = Ident::new(&init_str.value(), init_str.span());
         quote! {
@@ -283,7 +205,6 @@ pub fn blenny_module(attr: TokenStream, item: TokenStream) -> TokenStream {
             fn is_enabled(&self) -> bool {
                 #enabled_tokens
             }
-            #public_routes_method
             #route_handler_tokens
             #initialize_method
         }
@@ -293,7 +214,6 @@ pub fn blenny_module(attr: TokenStream, item: TokenStream) -> TokenStream {
                 name: stringify!(#name),
                 constructor: || Box::new(#name::default()),
                 prefix: #prefix_tokens,
-                public_routes: #public_routes_tokens,
             }
         }
     };
