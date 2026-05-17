@@ -4,7 +4,6 @@ use crate::conduit::Conduit;
 use crate::config::BlennyConfig;
 use crate::encoder::TransportEncoder;
 use crate::transport::TransportHub;
-use std::collections::HashSet;
 use std::sync::Arc;
 
 #[cfg(feature = "surreal")]
@@ -21,7 +20,6 @@ pub struct AppState {
     pub auth: Option<Arc<dyn AuthProvider>>,
     pub encoder: Arc<dyn TransportEncoder>,
     pub jwt_secret: String,
-    pub public_paths: HashSet<String>,
     pub config: BlennyConfig,
     #[cfg(feature = "surreal")]
     pub surrealdb: Option<Arc<Surreal<Client>>>,
@@ -34,7 +32,6 @@ impl AppState {
         auth: Option<Arc<dyn AuthProvider>>,
         encoder: Arc<dyn TransportEncoder>,
         jwt_secret: String,
-        public_paths: HashSet<String>,
         config: BlennyConfig,
         #[cfg(feature = "surreal")] surrealdb: Option<Arc<Surreal<Client>>>,
     ) -> Self {
@@ -44,7 +41,6 @@ impl AppState {
             auth,
             encoder,
             jwt_secret,
-            public_paths,
             config,
             #[cfg(feature = "surreal")]
             surrealdb,

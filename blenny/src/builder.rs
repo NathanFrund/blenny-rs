@@ -109,19 +109,6 @@ impl BlennyBuilder {
             None
         };
 
-        // ---- Collect public routes from modules ----
-        let mut all_public_paths: std::collections::HashSet<String> = module_regs
-            .iter()
-            .flat_map(|(_, module)| module.public_routes())
-            .collect();
-
-        // Add infrastructure public paths
-        all_public_paths.insert("/health".to_string());
-        all_public_paths.insert("/sse".to_string());
-        if self.config.websocket {
-            all_public_paths.insert("/ws".to_string());
-        }
-
         // ---- Build AppState ----
         let encoder: Arc<dyn TransportEncoder> = {
             #[cfg(feature = "datastar-sse")]
@@ -141,7 +128,6 @@ impl BlennyBuilder {
             auth_provider.clone(),
             encoder,
             self.config.jwt_secret.clone(),
-            all_public_paths,
             self.config.clone(),
             surrealdb,
         ));
@@ -153,7 +139,6 @@ impl BlennyBuilder {
             auth_provider.clone(),
             encoder,
             self.config.jwt_secret.clone(),
-            all_public_paths,
             self.config.clone(),
         ));
 

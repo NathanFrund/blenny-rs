@@ -12,7 +12,7 @@ use crate::auth::{AuthProvider, Claims, User};
 use crate::{blenny_auth_provider, blenny_module};
 
 #[derive(Default)]
-#[blenny_module(public_routes = ["/login", "/logout"])]
+#[blenny_module]
 #[blenny_auth_provider]
 pub struct AuthModule;
 
@@ -83,7 +83,6 @@ async fn login_submit(
             .hub
             .publish("dashboard.greeting", format!("User {username} logged in"));
 
-        
         axum::response::Response::builder()
             .status(303)
             .header("location", "/dashboard")
@@ -98,7 +97,6 @@ async fn login_submit(
 
 /// GET /logout – clears the cookie and redirects home.
 async fn logout() -> impl IntoResponse {
-    
     axum::response::Response::builder()
         .status(303)
         .header("location", "/login")
@@ -118,14 +116,12 @@ pub async fn validate_token(
         return next.run(req).await.into_response();
     }
 
-    // Check if the path is in the public routes list
-    if let Some(state) = req.extensions().get::<std::sync::Arc<crate::AppState>>()
-        && state.public_paths.contains(path) {
-            return next.run(req).await.into_response();
-        }
-
     // Retrieve AppState from request extensions
-    let state = req.extensions().get::<std::sync::Arc<crate::AppState>>().expect("AppState missing in middleware").clone();
+    let state = req
+        .extensions()
+        .get::<std::sync::Arc<crate::AppState>>()
+        .expect("AppState missing in middleware")
+        .clone();
 
     // Parse token
     let token_from_cookie = req
