@@ -1,16 +1,19 @@
 use axum::{
-    extract::{Extension, Query},
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    extract::{Extension, Query},
     http::{HeaderMap, StatusCode},
-    response::{Response, sse::{Event, KeepAlive, Sse}},
     response::IntoResponse,
+    response::{
+        Response,
+        sse::{Event, KeepAlive, Sse},
+    },
 };
 use futures::{SinkExt, StreamExt};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::broadcast;
-use tokio_stream::{wrappers::BroadcastStream, StreamExt as TokioStreamExt};
+use tokio_stream::{StreamExt as TokioStreamExt, wrappers::BroadcastStream};
 
 use crate::app_state::AppState;
 
@@ -68,7 +71,7 @@ impl TransportHub {
     /// Broadcast a raw data message.
     pub fn broadcast_data(&self, data: &str) {
         let _ = self.tx.send(ServerMessage {
-            category: "ui".into(),
+            category: "data".into(),
             html: None,
             signals: Some(data.into()),
         });
@@ -164,31 +167,37 @@ pub async fn sse_handler(
     // Determine if we should apply server‑side intent filtering.
     let do_server_filter = !state.encoder.filters_client_side();
     let intent_param = params.get("intent");
-    let do_filter = intent_param.is_some();           // filter only if ?intent is present
+    let do_filter = intent_param.is_some(); // filter only if ?intent is present
     let intents: HashSet<String> = intent_param
         .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
         .unwrap_or_default();
 
     let global_rx = state.hub.subscribe();
 
-    let stream = TokioStreamExt::filter_map(BroadcastStream::new(global_rx), move |result| match result {
-        Ok(msg) => {
-            if do_server_filter && do_filter && intents.contains(&msg.category) {
-                None
-            } else {
-                Some(Ok::<Event, std::convert::Infallible>(state.encoder.to_event(&msg)))
-            }
-        }
-        Err(_) => None,
-    });
+    let stream =
+        TokioStreamExt::filter_map(
+            BroadcastStream::new(global_rx),
+            move |result| match result {
+                Ok(msg) => {
+                    if do_server_filter && do_filter && intents.contains(&msg.category) {
+                        None
+                    } else {
+                        Some(Ok::<Event, std::convert::Infallible>(
+                            state.encoder.to_event(&msg),
+                        ))
+                    }
+                }
+                Err(_) => None,
+            },
+        );
 
-
-
-    Sse::new(stream).keep_alive(
-        KeepAlive::new()
-            .interval(Duration::from_secs(15))
-            .text("keep-alive"),
-    ).into_response()
+    Sse::new(stream)
+        .keep_alive(
+            KeepAlive::new()
+                .interval(Duration::from_secs(15))
+                .text("keep-alive"),
+        )
+        .into_response()
 }
 
 /// WebSocket endpoint with optional intent filter.
@@ -237,9 +246,7 @@ async fn handle_ws(
     let mut global_rx = state.hub.subscribe();
 
     // Register personal channel if authenticated
-    let mut personal_rx = user
-        .as_ref()
-        .map(|u| state.hub.register_user(&u.id));
+    let mut personal_rx = user.as_ref().map(|u| state.hub.register_user(&u.id));
 
     // Task to forward messages from hub to WebSocket
     let send_task = async move {
