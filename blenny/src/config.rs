@@ -65,13 +65,19 @@ impl Default for BlennyConfig {
 impl BlennyConfig {
     /// Load configuration from environment and a JSON file, falling back to defaults.
     pub fn load() -> Self {
-        Figment::new()
-            .merge(Env::prefixed("BLENNY_"))
-            .merge(Json::file("blenny.json"))
-            .extract()
-            .unwrap_or_else(|err| {
-                eprintln!("Invalid config, using defaults: {err}");
-                Self::default()
-            })
+        let mut figment = Figment::new().merge(Env::prefixed("BLENNY_"));
+
+        if std::path::Path::new("blenny.json").exists() {
+            figment = figment.merge(Json::file("blenny.json"));
+        } else if std::path::Path::new("blenny/blenny.json").exists() {
+            figment = figment.merge(Json::file("blenny/blenny.json"));
+        } else {
+            figment = figment.merge(Json::file("blenny.json"));
+        }
+
+        figment.extract().unwrap_or_else(|err| {
+            eprintln!("Invalid config, using defaults: {err}");
+            Self::default()
+        })
     }
 }

@@ -25,7 +25,7 @@ impl AuthProvider for AuthModule {
     }
 
     fn protect_router(&self, router: Router) -> Router {
-        router.layer(axum::middleware::from_fn(validate_token))
+        router.route_layer(axum::middleware::from_fn(validate_token))
     }
 }
 

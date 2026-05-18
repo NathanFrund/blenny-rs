@@ -16,6 +16,14 @@ pub struct User {
 }
 
 impl User {
+    /// Extract and validate a User from a raw JWT token string.
+    pub fn from_token(token: &str, jwt_secret: &str) -> Option<Self> {
+        let decoding_key = jsonwebtoken::DecodingKey::from_secret(jwt_secret.as_bytes());
+        jsonwebtoken::decode::<Claims>(token, &decoding_key, &jsonwebtoken::Validation::default())
+            .ok()
+            .map(|data| User { id: data.claims.sub })
+    }
+
     /// Extract and validate a User from request headers, using the given JWT secret.
     pub fn from_headers(headers: &axum::http::HeaderMap, jwt_secret: &str) -> Option<Self> {
         let token = headers
@@ -38,10 +46,7 @@ impl User {
                     .and_then(|v| v.strip_prefix("Bearer ").map(|t| t.to_string()))
             })?;
 
-        let decoding_key = jsonwebtoken::DecodingKey::from_secret(jwt_secret.as_bytes());
-        jsonwebtoken::decode::<Claims>(&token, &decoding_key, &jsonwebtoken::Validation::default())
-            .ok()
-            .map(|data| User { id: data.claims.sub })
+        Self::from_token(&token, jwt_secret)
     }
 }
 
