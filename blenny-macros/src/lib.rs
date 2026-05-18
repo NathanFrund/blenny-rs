@@ -229,6 +229,13 @@ pub fn blenny_auth_provider(_attr: TokenStream, item: TokenStream) -> TokenStrea
     let expanded = quote! {
         #input
 
+        impl #name {
+            fn _assert_auth_provider() {
+                fn assert_impl<T: blenny::auth::AuthProvider>() {}
+                assert_impl::<#name>();
+            }
+        }
+
         inventory::submit! {
             blenny::auth::AuthRegistration {
                 name: stringify!(#name),

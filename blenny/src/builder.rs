@@ -98,6 +98,12 @@ impl BlennyBuilder {
             None
         };
 
+        // ---- Auth public paths ----
+        let auth_public_paths: Vec<String> = auth_provider
+            .as_ref()
+            .map(|a| a.public_paths().into_iter().map(String::from).collect())
+            .unwrap_or_default();
+
         // ---- Build AppState ----
         let encoder: Arc<dyn TransportEncoder> = {
             #[cfg(feature = "datastar-sse")]
@@ -131,6 +137,7 @@ impl BlennyBuilder {
             auth_provider.clone(),
             encoder,
             self.config.jwt_secret.clone(),
+            auth_public_paths,
             self.config.clone(),
             surrealdb,
         ));
@@ -142,6 +149,7 @@ impl BlennyBuilder {
             auth_provider.clone(),
             encoder,
             self.config.jwt_secret.clone(),
+            auth_public_paths,
             self.config.clone(),
         ));
 

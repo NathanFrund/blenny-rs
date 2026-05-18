@@ -20,6 +20,7 @@ pub struct AppState {
     pub auth: Option<Arc<dyn AuthProvider>>,
     pub encoder: Arc<dyn TransportEncoder>,
     pub jwt_secret: String,
+    pub auth_public_paths: Vec<String>,
     pub config: BlennyConfig,
     #[cfg(feature = "surreal")]
     pub surrealdb: Option<Arc<Surreal<Client>>>,
@@ -32,6 +33,7 @@ impl AppState {
         auth: Option<Arc<dyn AuthProvider>>,
         encoder: Arc<dyn TransportEncoder>,
         jwt_secret: String,
+        auth_public_paths: Vec<String>,
         config: BlennyConfig,
         #[cfg(feature = "surreal")] surrealdb: Option<Arc<Surreal<Client>>>,
     ) -> Self {
@@ -41,6 +43,7 @@ impl AppState {
             auth,
             encoder,
             jwt_secret,
+            auth_public_paths,
             config,
             #[cfg(feature = "surreal")]
             surrealdb,

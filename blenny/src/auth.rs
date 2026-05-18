@@ -1,5 +1,6 @@
 // blenny/src/auth.rs
 use axum::Router;
+use axum::response::IntoResponse;
 use std::sync::Arc;
 
 // ---------- JWT Claims & User ----------
@@ -58,8 +59,42 @@ pub trait AuthProvider: Send + Sync {
     /// Login/logout routes (unprotected)
     fn auth_routes(&self) -> Router;
 
+    /// Paths that should bypass authentication middleware.
+    /// The framework has no defaults — every public path must be explicitly declared.
+    fn public_paths(&self) -> Vec<&'static str> {
+        vec![]
+    }
+
     /// Apply protection layer to the router
     fn protect_router(&self, router: Router) -> Router;
+}
+
+/// Standard JWT validation middleware.
+///
+/// Reads `auth_public_paths` from `AppState` to determine which paths bypass
+/// authentication. Extracts JWT from `blenny_token` cookie or `Authorization: Bearer`
+/// header. Redirects to `/login` on failure.
+pub async fn validate_token(
+    mut req: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let state = req
+        .extensions()
+        .get::<std::sync::Arc<crate::AppState>>()
+        .expect("AppState missing in middleware")
+        .clone();
+
+    let path = req.uri().path();
+    if state.auth_public_paths.iter().any(|p| path == p) {
+        return next.run(req).await.into_response();
+    }
+
+    if let Some(user) = User::from_headers(req.headers(), &state.jwt_secret) {
+        req.extensions_mut().insert(user);
+        return next.run(req).await.into_response();
+    }
+
+    axum::response::Redirect::to("/login").into_response()
 }
 
 // ---------- Inventory registration ----------
