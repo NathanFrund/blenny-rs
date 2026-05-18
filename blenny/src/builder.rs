@@ -84,27 +84,16 @@ impl BlennyBuilder {
                 .unwrap_or(raw_url)
                 .to_string();
 
-            match Surreal::new::<Ws>(url).await {
-                Ok(db) => {
-                    if let Err(e) = db
-                        .signin(surrealdb::opt::auth::Root {
-                            username: "root".into(),
-                            password: "root".into(),
-                        })
-                        .await
-                    {
-                        eprintln!("Root sign-in failed (continuing): {e}");
-                    }
+            let db = Surreal::new::<Ws>(url).await?;
+            db.signin(surrealdb::opt::auth::Root {
+                username: "root".into(),
+                password: "root".into(),
+            })
+            .await?;
 
-                    db.use_ns("blenny").use_db("blenny").await.unwrap();
-                    println!("Connected to SurrealDB at {}", raw_url);
-                    Some(Arc::new(db))
-                }
-                Err(e) => {
-                    eprintln!("Failed to connect to SurrealDB: {e}");
-                    None
-                }
-            }
+            db.use_ns("blenny").use_db("blenny").await?;
+            println!("Connected to SurrealDB at {}", raw_url);
+            Some(Arc::new(db))
         } else {
             None
         };

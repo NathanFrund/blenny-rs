@@ -1,13 +1,16 @@
+mod test_utils;
+
 #[cfg(feature = "surreal")]
 mod surrealdb_tests {
     use blenny::BlennyConfig;
+    use crate::test_utils;
 
-    async fn get_server_with_db() {
+    async fn get_server_with_db() -> test_utils::TestServer {
         let config = BlennyConfig {
             database_url: Some("ws://localhost:8000".into()),
             ..BlennyConfig::default()
         };
-        crate::test_utils::get_test_server_with_config(config).await
+        test_utils::get_test_server_with_config(config).await
     }
 
     #[tokio::test]
