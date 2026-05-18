@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Claims {
-    pub sub: String,         // user id
-    pub exp: usize,          // expiry timestamp
+    pub sub: String, // user id
+    pub exp: usize,  // expiry timestamp
 }
 
 #[derive(Debug, Clone)]
@@ -21,7 +21,9 @@ impl User {
         let decoding_key = jsonwebtoken::DecodingKey::from_secret(jwt_secret.as_bytes());
         jsonwebtoken::decode::<Claims>(token, &decoding_key, &jsonwebtoken::Validation::default())
             .ok()
-            .map(|data| User { id: data.claims.sub })
+            .map(|data| User {
+                id: data.claims.sub,
+            })
     }
 
     /// Extract and validate a User from request headers, using the given JWT secret.

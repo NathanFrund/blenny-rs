@@ -53,11 +53,21 @@ pub struct BlennyConfig {
     pub database_url: Option<String>,
 }
 
-fn default_port() -> u16 { 8081 }
-fn default_jwt_secret() -> String { "dev-secret".into() }
-fn default_encoder() -> String { "standard".into() }
-fn default_websocket() -> bool { false }
-fn default_transport_auth_required() -> bool { true }
+fn default_port() -> u16 {
+    8081
+}
+fn default_jwt_secret() -> String {
+    "dev-secret".into()
+}
+fn default_encoder() -> String {
+    "standard".into()
+}
+fn default_websocket() -> bool {
+    false
+}
+fn default_transport_auth_required() -> bool {
+    true
+}
 
 impl Default for BlennyConfig {
     fn default() -> Self {
@@ -108,7 +118,9 @@ impl BlennyConfig {
                     config.jwt_secret = content.trim().to_string();
                 }
                 Err(e) => {
-                    eprintln!("Error reading JWT secret file from BLENNY_JWT_SECRET_FILE env var at {file_path}: {e}");
+                    eprintln!(
+                        "Error reading JWT secret file from BLENNY_JWT_SECRET_FILE env var at {file_path}: {e}"
+                    );
                 }
             }
         }

@@ -1,7 +1,8 @@
 mod test_utils;
 use futures::StreamExt;
 use test_utils::{
-    TestUser, create_test_client, get_test_server, get_test_server_with_config, login_and_get_cookie, make_authenticated_request,
+    TestUser, create_test_client, get_test_server, get_test_server_with_config,
+    login_and_get_cookie, make_authenticated_request,
 };
 use tokio_tungstenite::{connect_async, tungstenite::client::IntoClientRequest};
 
@@ -216,7 +217,11 @@ async fn ws_unauthenticated_connection_when_auth_not_required() {
 
     // Verify it stays open by waiting for 2 seconds and expecting a timeout (no close or messages)
     let res = tokio::time::timeout(std::time::Duration::from_secs(2), read.next()).await;
-    assert!(res.is_err(), "Expected timeout because connection should stay open, but got: {:?}", res);
+    assert!(
+        res.is_err(),
+        "Expected timeout because connection should stay open, but got: {:?}",
+        res
+    );
 }
 
 #[tokio::test]
@@ -262,10 +267,11 @@ async fn ws_survives_lagged_receiver() {
     let start = std::time::Instant::now();
 
     while start.elapsed() < timeout_dur {
-        if let Some(Ok(msg)) = tokio::time::timeout(std::time::Duration::from_millis(500), read.next())
-            .await
-            .ok()
-            .flatten()
+        if let Some(Ok(msg)) =
+            tokio::time::timeout(std::time::Duration::from_millis(500), read.next())
+                .await
+                .ok()
+                .flatten()
         {
             if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
                 if text.contains("fresh msg") {
@@ -279,7 +285,10 @@ async fn ws_survives_lagged_receiver() {
         }
     }
 
-    assert!(got_fresh, "Expected to successfully receive fresh message after lag without connection closing");
+    assert!(
+        got_fresh,
+        "Expected to successfully receive fresh message after lag without connection closing"
+    );
 }
 
 #[tokio::test]
@@ -304,5 +313,9 @@ async fn ws_authenticated_connection_via_query_param() {
 
     // Verify it stays open by waiting for 2 seconds and expecting a timeout
     let res = tokio::time::timeout(std::time::Duration::from_secs(2), read.next()).await;
-    assert!(res.is_err(), "Expected timeout because connection should stay open, but got: {:?}", res);
+    assert!(
+        res.is_err(),
+        "Expected timeout because connection should stay open, but got: {:?}",
+        res
+    );
 }

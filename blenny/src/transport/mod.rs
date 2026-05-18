@@ -1,11 +1,11 @@
 // blenny/src/transport/mod.rs
-pub mod message;
 pub mod hub;
+pub mod message;
 pub mod sse;
 pub mod ws;
 
+pub use hub::{BroadcastError, ConnectionHandle, TransportHub, TransportHubConfig};
 pub use message::ServerMessage;
-pub use hub::{TransportHubConfig, ConnectionHandle, TransportHub, BroadcastError};
 pub use sse::sse_handler;
 pub use ws::ws_handler;
 

@@ -2,8 +2,8 @@ mod test_utils;
 
 #[cfg(feature = "surreal")]
 mod surrealdb_tests {
-    use blenny::BlennyConfig;
     use crate::test_utils;
+    use blenny::BlennyConfig;
 
     async fn get_server_with_db() -> test_utils::TestServer {
         let config = BlennyConfig {

@@ -16,8 +16,7 @@ impl Conduit {
     /// Starts a background watcher that reloads templates on change.
     pub fn hot_reload(template_dir: &str) -> Result<Self, io::Error> {
         // Initial engine load
-        let engine = Tera::new(&format!("{}/**/*.tera", template_dir))
-            .map_err(io::Error::other)?;
+        let engine = Tera::new(&format!("{}/**/*.tera", template_dir)).map_err(io::Error::other)?;
         println!(
             "Tera templates loaded: {:?}",
             engine.get_template_names().collect::<Vec<_>>()
@@ -65,9 +64,10 @@ impl Conduit {
                 }
                 // Clear the debounce handle when the reload task is done.
                 if let Some(ref handle) = debounce
-                    && handle.is_finished() {
-                        debounce = None;
-                    }
+                    && handle.is_finished()
+                {
+                    debounce = None;
+                }
             }
         });
 
@@ -83,8 +83,8 @@ impl Conduit {
         for file in EmbeddedTemplates::iter() {
             let filename = file.as_ref();
             if let Some(content) = EmbeddedTemplates::get(filename) {
-                let content_str = std::str::from_utf8(content.data.as_ref())
-                    .map_err(io::Error::other)?;
+                let content_str =
+                    std::str::from_utf8(content.data.as_ref()).map_err(io::Error::other)?;
                 tera.add_raw_template(filename, content_str)
                     .map_err(io::Error::other)?;
             }

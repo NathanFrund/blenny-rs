@@ -59,14 +59,18 @@ pub struct DatastarEncoder;
 
 #[cfg(feature = "datastar-sse")]
 impl TransportEncoder for DatastarEncoder {
-    
     /// Return only the raw payload bytes – no SSE framing. (Used for testing)
     fn encode(&self, msg: &ServerMessage) -> Vec<u8> {
         match msg.category.as_str() {
             "ui" => msg.html.clone().unwrap_or_default().into_bytes(),
             "data" => msg.signals.clone().unwrap_or_default().into_bytes(),
             "command" => msg.html.clone().unwrap_or_default().into_bytes(),
-            _ => msg.html.clone().or(msg.signals.clone()).unwrap_or_default().into_bytes(),
+            _ => msg
+                .html
+                .clone()
+                .or(msg.signals.clone())
+                .unwrap_or_default()
+                .into_bytes(),
         }
     }
 
@@ -104,11 +108,7 @@ impl TransportEncoder for DatastarEncoder {
             }
             // Fallback: send as a generic patch‑elements event.
             _ => {
-                let data = msg
-                    .html
-                    .clone()
-                    .or(msg.signals.clone())
-                    .unwrap_or_default();
+                let data = msg.html.clone().or(msg.signals.clone()).unwrap_or_default();
                 PatchElements::new(data)
                     .into_datastar_event()
                     .write_as_axum_sse_event()
@@ -116,4 +116,3 @@ impl TransportEncoder for DatastarEncoder {
         }
     }
 }
-

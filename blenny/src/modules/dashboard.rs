@@ -33,7 +33,8 @@ async fn dashboard_handler(
 ) -> Html<String> {
     let mut ctx = tera::Context::new();
     ctx.insert("username", &user.id);
-    let html = state.conduit
+    let html = state
+        .conduit
         .render("dashboard/dashboard", &ctx)
         .unwrap_or_else(|e| format!("Template error: {e}"));
     Html(html)

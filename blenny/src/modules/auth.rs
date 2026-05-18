@@ -42,7 +42,8 @@ async fn login_form(
         ctx.insert("error", err);
     }
     Html(
-        state.conduit
+        state
+            .conduit
             .render("auth/login", &ctx)
             .unwrap_or_else(|e| format!("Template error: {e}")),
     )
