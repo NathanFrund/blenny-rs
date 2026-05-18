@@ -92,7 +92,8 @@ pub struct TransportHub {
     topics: Arc<RwLock<HashMap<String, broadcast::Sender<String>>>>,
 
     // Per-user channels for direct messaging, keyed by (user_id, connection_id)
-    users: Arc<RwLock<HashMap<(String, Uuid), broadcast::Sender<ServerMessage>>>>,
+    // Map: user_id -> (connection_id -> sender)
+    users: Arc<RwLock<HashMap<String, HashMap<Uuid, broadcast::Sender<ServerMessage>>>>>,
 
     // Configuration for buffer sizes
     config: TransportHubConfig,
@@ -210,7 +211,9 @@ impl TransportHub {
             .write()
             .map_err(|_| BroadcastError::HubPoisoned)?;
 
-        users.insert((user_id.to_string(), connection_id), tx);
+        // Get or create the inner map for this user
+        let user_map = users.entry(user_id.to_string()).or_default();
+        user_map.insert(connection_id, tx);
 
         let handle = ConnectionHandle {
             user_id: user_id.to_string(),
@@ -225,7 +228,12 @@ impl TransportHub {
     /// This is called automatically when a ConnectionHandle is dropped.
     fn unregister_connection(&self, user_id: &str, connection_id: Uuid) {
         if let Ok(mut users) = self.users.write() {
-            users.remove(&(user_id.to_string(), connection_id));
+            if let Some(connections) = users.get_mut(user_id) {
+            connections.remove(&connection_id);
+            if connections.is_empty() {
+                users.remove(user_id);
+            }
+        }
             tracing::debug!(
                 "Unregistered connection {} for user {}",
                 connection_id,
@@ -238,20 +246,18 @@ impl TransportHub {
 
     /// Send a message directly to all connections of a specific user.
     pub fn direct_to_user(&self, user_id: &str, msg: ServerMessage) {
-        if let Ok(users) = self.users.read() {
-            let mut sent_count = 0;
-            for ((uid, _), tx) in users.iter() {
-                if uid == user_id {
+        if let Some(user_map) = self.users.read().ok() {
+            if let Some(connections) = user_map.get(user_id) {
+                for tx in connections.values() {
                     if tx.send(msg.clone()).is_ok() {
-                        sent_count += 1;
+                        // Optionally track sent messages
                     }
                 }
-            }
-            if sent_count == 0 {
+            } else {
                 tracing::debug!("No active connections for user {}", user_id);
             }
         } else {
-            tracing::warn!("Failed to send direct message: hub poisoned");
+            tracing::warn!("Failed to read user map for direct message");
         }
     }
 
@@ -376,19 +382,21 @@ fn sse_stream(
         // Subscribe to global broadcast
         let mut global_rx = state.hub.subscribe();
 
-        // Register and subscribe to personal channel if authenticated
-        let mut personal_rx = if let Some(ref user) = user {
+        // Register personal channel – keep handle alive for the stream duration
+        let (mut personal_rx, _connection_guard) = if let Some(ref user) = user {
             match state.hub.register_user(&user.id) {
-                Ok((rx, _handle)) => Some(rx),
+                Ok((rx, handle)) => (Some(rx), Some(handle)),
                 Err(e) => {
                     tracing::error!("Failed to register user for SSE: {}", e);
                     yield Ok(Event::default().comment("failed to register for personal messages"));
-                    None
+                    (None, None)
                 }
             }
         } else {
-            None
+            (None, None)
         };
+
+        // _connection_guard lives until the stream ends, then unregisters
 
         loop {
             let msg = if let Some(ref mut personal) = personal_rx {
@@ -472,16 +480,16 @@ async fn handle_ws(
     let mut global_rx = state.hub.subscribe();
 
     // Register and subscribe to personal channel if authenticated
-    let mut personal_rx = if let Some(ref user) = user {
+    let (mut personal_rx, _ws_guard) = if let Some(ref user) = user {
         match state.hub.register_user(&user.id) {
-            Ok((rx, _handle)) => Some(rx),
+            Ok((rx, handle)) => (Some(rx), Some(handle)),
             Err(e) => {
                 tracing::error!("Failed to register user for WebSocket: {}", e);
-                None
+                (None, None)
             }
         }
     } else {
-        None
+        (None, None)
     };
 
     // Task to forward messages from hub to WebSocket
