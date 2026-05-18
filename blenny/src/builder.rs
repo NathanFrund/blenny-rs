@@ -49,8 +49,7 @@ impl BlennyBuilder {
         self
     }
 
-    pub async fn serve(self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
-        // ---- Discover modules without immediate init ----
+    fn discover_modules(&self) -> Vec<(String, Box<dyn BlennyModule>)> {
         println!("Discovering modules...");
         let mut module_regs: Vec<(String, Box<dyn BlennyModule>)> = Vec::new();
         for reg in inventory::iter::<ModuleRegistration> {
@@ -63,8 +62,10 @@ impl BlennyBuilder {
             module_regs.push((reg.name.to_string(), module));
         }
         println!("Found {} module(s).", module_regs.len());
+        module_regs
+    }
 
-        // ---- Auth discovery ----
+    fn discover_auth_provider(&self) -> Option<Arc<dyn AuthProvider>> {
         let mut auth_provider: Option<Arc<dyn AuthProvider>> = None;
         for reg in inventory::iter::<AuthRegistration> {
             if auth_provider.is_some() {
@@ -74,7 +75,13 @@ impl BlennyBuilder {
             auth_provider = Some((reg.constructor)());
             println!("Using auth provider: {}", reg.name);
         }
+        auth_provider
+    }
 
+    async fn build_app_state(
+        &self,
+        auth_provider: Option<Arc<dyn AuthProvider>>,
+    ) -> Result<Arc<AppState>, Box<dyn std::error::Error>> {
         // ---- Optional SurrealDB connection ----
         #[cfg(feature = "surreal")]
         let surrealdb = if let Some(raw_url) = &self.config.database_url {
@@ -104,7 +111,7 @@ impl BlennyBuilder {
             .map(|a| a.public_paths().into_iter().map(String::from).collect())
             .unwrap_or_default();
 
-        // ---- Build AppState ----
+        // ---- Encoder ----
         let encoder: Arc<dyn TransportEncoder> = {
             #[cfg(feature = "datastar-sse")]
             {
@@ -116,8 +123,9 @@ impl BlennyBuilder {
             }
         };
 
-        let conduit = match self.conduit {
-            Some(c) => c,
+        // ---- Conduit ----
+        let conduit = match &self.conduit {
+            Some(c) => c.clone(),
             None => {
                 let default_conduit = if let Some(dir) = &self.config.template_dir {
                     Conduit::hot_reload(dir)?
@@ -130,6 +138,7 @@ impl BlennyBuilder {
             }
         };
 
+        // ---- AppState ----
         #[cfg(feature = "surreal")]
         let app_state = Arc::new(AppState::new(
             conduit,
@@ -157,50 +166,14 @@ impl BlennyBuilder {
             let _ = sender.send(app_state.clone());
         }
 
-        // ---- Auth layer and routes ----
-        let mut protected_router = Router::new();
-        let mut active_modules: Vec<Box<dyn BlennyModule>> = Vec::new();
-        for (name, mut module) in module_regs {
-            module.initialize_module(app_state.clone());
-            protected_router = module.register_routes(protected_router);
-            println!("  - registered routes for module: {}", name);
-            active_modules.push(module);
-        }
+        Ok(app_state)
+    }
 
-        // Start all modules (they can start background tasks)
-        for module in &active_modules {
-            module.start_module();
-        }
-
-        // ---- Build final router ----
-        let mut router = Router::new();
-
-        // Public infrastructure routes (no auth)
-        router = router.route("/health", axum::routing::get(|| async { "OK" }));
-        router = router.route("/sse", axum::routing::get(sse_handler));
-        if self.config.websocket {
-            router = router.route("/ws", axum::routing::get(ws_handler));
-        }
-        // Static assets (dev only)
-        #[cfg(debug_assertions)]
-        {
-            router = router.nest_service("/static", ServeDir::new("static"));
-        }
-
-        // Apply auth layer to module routes only
-        if let Some(auth) = &app_state.auth {
-            protected_router = protected_router.merge(auth.auth_routes());
-            protected_router = auth.protect_router(protected_router);
-        }
-
-        // Anti-fragile middleware for module routes
-        protected_router = protected_router.layer(AntiFragileLayer);
-
-        // Merge protected module routes into the main router
-        router = router.merge(protected_router);
-
-        // Inject AppState
-        router = router.layer(axum::Extension(app_state.clone()));
+    pub async fn serve(self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let module_regs = self.discover_modules();
+        let auth_provider = self.discover_auth_provider();
+        let app_state = self.build_app_state(auth_provider.clone()).await?;
+        let router = build_router(&app_state, module_regs, self.config.websocket);
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
         println!("Blenny server listening on http://{addr}");
@@ -213,4 +186,55 @@ impl Default for BlennyBuilder {
     fn default() -> Self {
         Self::new(BlennyConfig::default())
     }
+}
+
+fn build_router(
+    app_state: &Arc<AppState>,
+    module_regs: Vec<(String, Box<dyn BlennyModule>)>,
+    websocket: bool,
+) -> Router {
+    // ---- Module lifecycle ----
+    let mut protected_router = Router::new();
+    let mut active_modules: Vec<Box<dyn BlennyModule>> = Vec::new();
+    for (name, mut module) in module_regs {
+        module.initialize_module(app_state.clone());
+        protected_router = module.register_routes(protected_router);
+        println!("  - registered routes for module: {}", name);
+        active_modules.push(module);
+    }
+
+    for module in &active_modules {
+        module.start_module();
+    }
+
+    // ---- Build final router ----
+    let mut router = Router::new();
+
+    // Public infrastructure routes (no auth)
+    router = router.route("/health", axum::routing::get(|| async { "OK" }));
+    router = router.route("/sse", axum::routing::get(sse_handler));
+    if websocket {
+        router = router.route("/ws", axum::routing::get(ws_handler));
+    }
+    #[cfg(debug_assertions)]
+    {
+        router = router.nest_service("/static", ServeDir::new("static"));
+    }
+
+    // Apply auth layer to module routes only
+    if let Some(auth) = &app_state.auth {
+        protected_router = protected_router.merge(auth.auth_routes());
+        protected_router = auth.protect_router(protected_router);
+    }
+
+    // Anti-fragile middleware for module routes
+    protected_router = protected_router.layer(AntiFragileLayer);
+
+    // Merge protected module routes into the main router
+    router = router.merge(protected_router);
+
+    // Inject AppState
+    router = router.layer(axum::Extension(app_state.clone()));
+
+    router
 }
