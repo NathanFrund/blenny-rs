@@ -52,24 +52,21 @@ impl TransportEncoder for StandardEncoder {
     // to_event() uses default implementation
 }
 
+// Official Datastar SDK based encoder
 #[cfg(feature = "datastar-sse")]
 #[derive(Clone)]
 pub struct DatastarEncoder;
 
 #[cfg(feature = "datastar-sse")]
 impl TransportEncoder for DatastarEncoder {
-    /// Return only the raw payload bytes – no SSE framing.
+    
+    /// Return only the raw payload bytes – no SSE framing. (Used for testing)
     fn encode(&self, msg: &ServerMessage) -> Vec<u8> {
         match msg.category.as_str() {
             "ui" => msg.html.clone().unwrap_or_default().into_bytes(),
             "data" => msg.signals.clone().unwrap_or_default().into_bytes(),
             "command" => msg.html.clone().unwrap_or_default().into_bytes(),
-            _ => msg
-                .html
-                .clone()
-                .or_else(|| msg.signals.clone())
-                .unwrap_or_default()
-                .into_bytes(),
+            _ => msg.html.clone().or(msg.signals.clone()).unwrap_or_default().into_bytes(),
         }
     }
 
@@ -81,16 +78,42 @@ impl TransportEncoder for DatastarEncoder {
         true
     }
 
-    /// Build a named SSE Event with the correct event type and data.
+    /// Build the correct named SSE Event using the official Datastar SDK.
     fn to_event(&self, msg: &ServerMessage) -> Event {
-        let encoded_bytes = self.encode(msg);
-        let payload = String::from_utf8_lossy(&encoded_bytes);
-        let event_type = match msg.category.as_str() {
-            "ui" => "datastar-patch-elements",
-            "data" => "datastar-patch-signals",
-            "command" => "datastar-execute-script",
-            _ => "blenny-notification",
-        };
-        Event::default().event(event_type).data(payload)
+        // Import datastar prelude to bring in the event types
+        use datastar::prelude::*;
+
+        match msg.category.as_str() {
+            "ui" => {
+                let html = msg.html.clone().unwrap_or_default();
+                PatchElements::new(html)
+                    .into_datastar_event()
+                    .write_as_axum_sse_event()
+            }
+            "data" => {
+                let signals = msg.signals.clone().unwrap_or_default();
+                PatchSignals::new(signals)
+                    .into_datastar_event()
+                    .write_as_axum_sse_event()
+            }
+            "command" => {
+                let script = msg.html.clone().unwrap_or_default();
+                ExecuteScript::new(script)
+                    .into_datastar_event()
+                    .write_as_axum_sse_event()
+            }
+            // Fallback: send as a generic patch‑elements event.
+            _ => {
+                let data = msg
+                    .html
+                    .clone()
+                    .or(msg.signals.clone())
+                    .unwrap_or_default();
+                PatchElements::new(data)
+                    .into_datastar_event()
+                    .write_as_axum_sse_event()
+            }
+        }
     }
 }
+
