@@ -1,9 +1,12 @@
+use crate::{AppState, auth::User, blenny_module};
 use axum::{Extension, Router, response::Html};
 use std::sync::Arc;
-use crate::{blenny_module, AppState, auth::User};
 
 #[derive(Default)]
-#[blenny_module(route_handler = "dashboard_routes", initialize_handler = "initialize_module")]
+#[blenny_module(
+    route_handler = "dashboard_routes",
+    initialize_handler = "initialize_module"
+)]
 pub struct DashboardModule;
 
 impl DashboardModule {
@@ -12,8 +15,10 @@ impl DashboardModule {
     }
 
     fn initialize_module(&mut self, state: Arc<AppState>) {
-        let hub = state.hub.clone();
-        let mut rx = hub.subscribe_topic("dashboard.greeting");
+        let mut rx = state
+            .hub
+            .subscribe_topic("some_topic")
+            .expect("Failed to subscribe to topic");
         tokio::spawn(async move {
             while let Ok(msg) = rx.recv().await {
                 println!("Dashboard received: {msg}");

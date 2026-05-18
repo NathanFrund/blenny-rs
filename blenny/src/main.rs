@@ -1,5 +1,13 @@
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize tracing subscriber to print logs to the terminal
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
     // Initialise crypto provider for jsonwebtoken
     jsonwebtoken::crypto::CryptoProvider::install_default(
         &jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER,

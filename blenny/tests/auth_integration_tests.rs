@@ -1,7 +1,7 @@
 mod test_utils;
 use futures::StreamExt;
 use test_utils::{
-    TestUser, create_test_client, get_test_server, login_and_get_cookie, make_authenticated_request,
+    TestUser, create_test_client, get_test_server, get_test_server_with_config, login_and_get_cookie, make_authenticated_request,
 };
 use tokio_tungstenite::{connect_async, tungstenite::client::IntoClientRequest};
 
@@ -198,4 +198,111 @@ async fn sse_rejects_unauthenticated_by_default() {
         .await
         .unwrap();
     assert_eq!(resp.status().as_u16(), 401);
+}
+
+#[tokio::test]
+async fn ws_unauthenticated_connection_when_auth_not_required() {
+    let config = blenny::BlennyConfig {
+        websocket: true,
+        transport_auth_required: false,
+        ..blenny::BlennyConfig::default()
+    };
+    let server = get_test_server_with_config(config).await;
+
+    // Connect WebSocket without auth
+    let url = format!("ws://127.0.0.1:{}/ws", server.port());
+    let (ws_stream, _) = connect_async(url).await.unwrap();
+    let (_write, mut read) = ws_stream.split();
+
+    // Verify it stays open by waiting for 2 seconds and expecting a timeout (no close or messages)
+    let res = tokio::time::timeout(std::time::Duration::from_secs(2), read.next()).await;
+    assert!(res.is_err(), "Expected timeout because connection should stay open, but got: {:?}", res);
+}
+
+#[tokio::test]
+async fn ws_survives_lagged_receiver() {
+    let config = blenny::BlennyConfig {
+        websocket: true,
+        transport_auth_required: false,
+        ..blenny::BlennyConfig::default()
+    };
+    let server = get_test_server_with_config(config).await;
+    let app_state = server.app_state().await;
+
+    // Connect WebSocket
+    let url = format!("ws://127.0.0.1:{}/ws", server.port());
+    let (ws_stream, _) = connect_async(url).await.unwrap();
+    let (_write, mut read) = ws_stream.split();
+
+    // Trigger more than the buffer size of broadcasts to cause the receiver to lag.
+    // The default buffer size is 256. We will broadcast 300 messages.
+    for i in 0..300 {
+        app_state.hub.broadcast(blenny::transport::ServerMessage {
+            category: "test".to_string(),
+            html: Some(format!("msg {}", i)),
+            signals: None,
+        });
+    }
+
+    // Now, let's wait a moment for the channel to be filled and cause a lag
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    // Let's send one more fresh message
+    app_state.hub.broadcast(blenny::transport::ServerMessage {
+        category: "test".to_string(),
+        html: Some("fresh msg".to_string()),
+        signals: None,
+    });
+
+    // The websocket connection should stay open, and we should be able to read
+    // the "fresh msg" (or some subsequent message) eventually because the loop continues
+    // after the lag warning is logged.
+    let mut got_fresh = false;
+    let timeout_dur = std::time::Duration::from_secs(5);
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < timeout_dur {
+        if let Some(Ok(msg)) = tokio::time::timeout(std::time::Duration::from_millis(500), read.next())
+            .await
+            .ok()
+            .flatten()
+        {
+            if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
+                if text.contains("fresh msg") {
+                    got_fresh = true;
+                    break;
+                }
+            }
+        } else {
+            // If the connection was closed, read.next() returns None immediately or error
+            break;
+        }
+    }
+
+    assert!(got_fresh, "Expected to successfully receive fresh message after lag without connection closing");
+}
+
+#[tokio::test]
+async fn ws_authenticated_connection_via_query_param() {
+    let config = blenny::BlennyConfig {
+        websocket: true,
+        transport_auth_required: true,
+        ..blenny::BlennyConfig::default()
+    };
+    let server = get_test_server_with_config(config).await;
+
+    // Login to get a valid token
+    let client = create_test_client();
+    let user = TestUser::default();
+    let cookie_str = login_and_get_cookie(&client, &server.base_url(), &user).await;
+    let token = cookie_str.strip_prefix("blenny_token=").unwrap();
+
+    // Connect WebSocket using the token as a query parameter
+    let url = format!("ws://127.0.0.1:{}/ws?token={}", server.port(), token);
+    let (ws_stream, _) = connect_async(url).await.unwrap();
+    let (_write, mut read) = ws_stream.split();
+
+    // Verify it stays open by waiting for 2 seconds and expecting a timeout
+    let res = tokio::time::timeout(std::time::Duration::from_secs(2), read.next()).await;
+    assert!(res.is_err(), "Expected timeout because connection should stay open, but got: {:?}", res);
 }

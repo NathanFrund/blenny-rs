@@ -25,7 +25,7 @@ impl AuthProvider for AuthModule {
     }
 
     fn protect_router(&self, router: Router) -> Router {
-        router.layer(axum::middleware::from_fn(validate_token))
+        router.route_layer(axum::middleware::from_fn(validate_token))
     }
 }
 
@@ -79,7 +79,7 @@ async fn login_submit(
             .build();
 
         // Publish a greeting to the dashboard topic
-        state
+        let _ = state
             .hub
             .publish("dashboard.greeting", format!("User {username} logged in"));
 
