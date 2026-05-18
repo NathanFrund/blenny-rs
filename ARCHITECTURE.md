@@ -136,7 +136,6 @@ For the rare case where a fully public transport is desired
 - **Middleware Logic:** The protect layer is applied **before** auth routes are merged, so login is public; module routes are behind the guard.
 - **Browser Login Flow:** GET `/login` serves a Tera form. POST `/login` accepts form data, sets a JWT cookie (`blenny_token`), and redirects to `/dashboard`. `/logout` clears the cookie.
 - **User Injection:** Handlers extract `Extension<User>` to know who is logged in.
-- **Public route bypass:** Modules can override `public_routes() -> HashSet<String>` to declare paths that should be accessible without authentication. The auth middleware automatically skips these routes.
 - **JWT refresh / sliding windows** are not yet implemented; the current system uses time‑based expiry.
 
 ### Infrastructure vs. Module Routes
@@ -216,12 +215,12 @@ For the rare case where a fully public transport is desired
 | Multi‑layer configuration                                | ✅ Implemented |
 | Anti‑fragile middleware                                  | ✅ Implemented |
 | Direct per‑user messaging                                | ✅ Implemented |
-| Per‑route auth control (`public_routes()`)               | ✅ Implemented |
-| SurrealDB integration (client connection)                | ✅ Implemented |
+| Per‑route auth control (`public_routes()`)               | ❌ Rejected |
 | Static asset management (CSS, JS)                        | ✅ Implemented |
 | WebSocket sidecar (opt‑in via config)                    | ✅ Implemented |
 | Unified error handling (`BlennyError`)                   | ✅ Implemented |
-| SurrealDB integration                                    | ⬜ Planned     |
+| Datastar SSE encoder (via SDK)                           | ✅ Implemented |
+| SurrealDB integration                                    | ✅ Implemented |
 | Dev‑friendly proc‑macro improvements (path prefix, etc.) | ⬜ Planned     |
 
 ## 📝 Key Architectural Decisions
@@ -251,8 +250,6 @@ Blenny‑rs is not a direct copy of the Smalltalk implementation; it’s a re‑
 
 - **Bundled State:** All singletons are now grouped into an `AppState` struct, simplifying injection and future `State` migration.
 - **Module Lifecycle Robustness:** Shutdown timeouts, panic handling, and clear ordering guarantees added to the lifecycle specification.
-- **Fine‑Grained Auth:** Per‑route access control (`public_routes()`) is implemented, allowing modules to mark specific paths as public.
-- **Topic‑Based Pub/Sub:** Moved up in priority and implemented; enables decoupled patterns without extra infrastructure.
 - **Backpressure Awareness:** Documented the broadcast buffer behavior and future configurability.
 - **Error Handling Strategy:** A unified `BlennyError` type and anti‑fragile middleware are now in place.
 - **Static Assets Clarification:** Conduit is for templates only; a separate `StaticAssets` component handles CSS/JS (implemented with hot‑reload and embedding).
