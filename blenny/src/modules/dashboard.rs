@@ -31,11 +31,10 @@ async fn dashboard_handler(
     Extension(state): Extension<Arc<AppState>>,
     Extension(user): Extension<User>,
 ) -> Html<String> {
-    let conduit = state.conduit.as_ref().expect("Conduit not set");
     let mut ctx = tera::Context::new();
     ctx.insert("username", &user.id);
-    let html = conduit
-        .render("dashboard", &ctx)
+    let html = state.conduit
+        .render("dashboard/dashboard", &ctx)
         .unwrap_or_else(|e| format!("Template error: {e}"));
     Html(html)
 }

@@ -21,8 +21,17 @@ pub struct BlennyConfig {
     pub template_dir: Option<String>,
 
     /// Secret key for JWT signing / verification.
+    /// Priority (highest to lowest):
+    ///   1. BLENNY_JWT_SECRET_FILE environment variable (path to file containing the secret)
+    ///   2. BLENNY_JWT_SECRET environment variable / JSON `jwt_secret` configuration
+    ///   3. Rust default ("dev-secret")
     #[serde(default = "default_jwt_secret")]
     pub jwt_secret: String,
+
+    /// Path to a file containing the JWT secret (useful in production like Docker/K8s).
+    /// If provided, the contents of this file takes precedence over `jwt_secret`.
+    #[serde(default)]
+    pub jwt_secret_file: Option<String>,
 
     /// SSE encoder: "standard" or "datastar" (future).
     #[serde(default = "default_encoder")]
@@ -37,6 +46,8 @@ pub struct BlennyConfig {
     pub transport_auth_required: bool,
 
     /// URL of the SurrealDB instance to connect to (e.g., "ws://localhost:8000" or "https://cloud.surrealdb.com").
+    /// Note: The builder automatically strips any "ws://" or "wss://" prefixes because the underlying SurrealDB
+    /// remote WebSocket connector expects a naked host/port when establishing a connection.
     /// Requires the `surreal` feature flag.
     #[serde(default)]
     pub database_url: Option<String>,
@@ -54,6 +65,7 @@ impl Default for BlennyConfig {
             port: default_port(),
             template_dir: None,
             jwt_secret: default_jwt_secret(),
+            jwt_secret_file: None,
             encoder: default_encoder(),
             websocket: default_websocket(),
             transport_auth_required: default_transport_auth_required(),
@@ -75,9 +87,32 @@ impl BlennyConfig {
             figment = figment.merge(Json::file("blenny.json"));
         }
 
-        figment.extract().unwrap_or_else(|err| {
+        let mut config: Self = figment.extract().unwrap_or_else(|err| {
             eprintln!("Invalid config, using defaults: {err}");
             Self::default()
-        })
+        });
+
+        // Load JWT secret from file if provided via config or environment
+        if let Some(ref file_path) = config.jwt_secret_file {
+            match std::fs::read_to_string(file_path) {
+                Ok(content) => {
+                    config.jwt_secret = content.trim().to_string();
+                }
+                Err(e) => {
+                    eprintln!("Error reading JWT secret file at {file_path}: {e}");
+                }
+            }
+        } else if let Ok(file_path) = std::env::var("BLENNY_JWT_SECRET_FILE") {
+            match std::fs::read_to_string(&file_path) {
+                Ok(content) => {
+                    config.jwt_secret = content.trim().to_string();
+                }
+                Err(e) => {
+                    eprintln!("Error reading JWT secret file from BLENNY_JWT_SECRET_FILE env var at {file_path}: {e}");
+                }
+            }
+        }
+
+        config
     }
 }
