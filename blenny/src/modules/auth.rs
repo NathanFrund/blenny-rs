@@ -37,13 +37,12 @@ async fn login_form(
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
     use axum::response::Html;
-    let conduit = state.conduit.as_ref().expect("Conduit not set");
     let mut ctx = tera::Context::new();
     if let Some(err) = params.get("error") {
         ctx.insert("error", err);
     }
     Html(
-        conduit
+        state.conduit
             .render("auth/login", &ctx)
             .unwrap_or_else(|e| format!("Template error: {e}")),
     )

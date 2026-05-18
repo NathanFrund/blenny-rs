@@ -110,9 +110,23 @@ impl BlennyBuilder {
             }
         };
 
+        let conduit = match self.conduit {
+            Some(c) => c,
+            None => {
+                let default_conduit = if let Some(dir) = &self.config.template_dir {
+                    Conduit::hot_reload(dir)?
+                } else if cfg!(debug_assertions) {
+                    Conduit::hot_reload("templates")?
+                } else {
+                    Conduit::frozen()?
+                };
+                Arc::new(default_conduit)
+            }
+        };
+
         #[cfg(feature = "surreal")]
         let app_state = Arc::new(AppState::new(
-            self.conduit.clone(),
+            conduit,
             self.transport_hub.clone(),
             auth_provider.clone(),
             encoder,
@@ -123,7 +137,7 @@ impl BlennyBuilder {
 
         #[cfg(not(feature = "surreal"))]
         let app_state = Arc::new(AppState::new(
-            self.conduit.clone(),
+            conduit,
             self.transport_hub.clone(),
             auth_provider.clone(),
             encoder,
