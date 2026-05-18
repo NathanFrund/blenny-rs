@@ -79,7 +79,7 @@ async fn login_submit(
             .build();
 
         // Publish a greeting to the dashboard topic
-        state
+        let _ = state
             .hub
             .publish("dashboard.greeting", format!("User {username} logged in"));
 

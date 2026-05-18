@@ -10,10 +10,11 @@ use axum::{
 };
 use futures::{SinkExt, StreamExt};
 use std::collections::{HashMap, HashSet};
+use std::convert::Infallible;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::broadcast;
-use tokio_stream::{StreamExt as TokioStreamExt, wrappers::BroadcastStream};
+use uuid::Uuid;
 
 use crate::app_state::AppState;
 
@@ -25,41 +26,105 @@ pub struct ServerMessage {
     pub signals: Option<String>,
 }
 
-/// Shared hub that holds the broadcast channel for real‑time messages.
-#[derive(Clone)]
-pub struct TransportHub {
-    // Global client broadcast (SSE, future WS)
-    tx: broadcast::Sender<ServerMessage>,
-    // Topic‑based channels for inter‑module messaging
-    topics: Arc<RwLock<HashMap<String, broadcast::Sender<String>>>>,
-    // Per-user channels for direct messaging
-    users: Arc<RwLock<HashMap<String, broadcast::Sender<ServerMessage>>>>,
+/// Configuration for the TransportHub's broadcast channels.
+/// Allows tuning buffer sizes based on application requirements.
+#[derive(Debug, Clone)]
+pub struct TransportHubConfig {
+    /// Buffer size for the global broadcast channel (default: 256).
+    /// Slow subscribers will be dropped if they fall more than this many messages behind.
+    pub global_broadcast_buffer: usize,
+
+    /// Buffer size for topic-based pub/sub channels (default: 64).
+    pub topic_buffer: usize,
+
+    /// Buffer size for per-user direct message channels (default: 64).
+    pub user_buffer: usize,
 }
 
-impl Default for TransportHub {
+impl Default for TransportHubConfig {
     fn default() -> Self {
-        Self::new()
+        Self {
+            global_broadcast_buffer: 256,
+            topic_buffer: 64,
+            user_buffer: 64,
+        }
     }
 }
 
+/// Handle to track a user connection.
+/// When dropped, automatically unregisters the connection from the hub.
+/// This prevents stale user channels when the same user connects multiple times (e.g., multiple tabs).
+#[derive(Clone)]
+pub struct ConnectionHandle {
+    user_id: String,
+    connection_id: Uuid,
+    hub: Arc<TransportHub>,
+}
+
+impl Drop for ConnectionHandle {
+    fn drop(&mut self) {
+        self.hub
+            .unregister_connection(&self.user_id, self.connection_id);
+    }
+}
+
+/// Shared hub that holds the broadcast channels for real‑time messages.
+///
+/// The TransportHub manages three independent message flows:
+///
+/// 1. **Global Broadcast** – Sent to all connected clients via `broadcast_html()`, `broadcast_data()`, or `broadcast()`.
+///    Used for public data, announcements, and shared state updates.
+///
+/// 2. **Topic-based Pub/Sub** – Per-topic broadcast channels for inter-module communication.
+///    Modules can publish to topics (e.g., "order.created") and subscribe to them without direct coupling.
+///
+/// 3. **Per-User Direct Messaging** – Private channels for authenticated users.
+///    Only the specified user receives these messages via `direct_html_to_user()` or `direct_data_to_user()`.
+///
+/// Connection IDs ensure that when a user connects multiple times (e.g., multiple browser tabs),
+/// each connection gets its own receiver and closing one tab doesn't affect others.
+#[derive(Clone)]
+pub struct TransportHub {
+    // Global client broadcast (SSE, WS)
+    tx: broadcast::Sender<ServerMessage>,
+
+    // Topic-based channels for inter-module messaging
+    topics: Arc<RwLock<HashMap<String, broadcast::Sender<String>>>>,
+
+    // Per-user channels for direct messaging, keyed by (user_id, connection_id)
+    users: Arc<RwLock<HashMap<(String, Uuid), broadcast::Sender<ServerMessage>>>>,
+
+    // Configuration for buffer sizes
+    config: TransportHubConfig,
+}
+
 impl TransportHub {
+    /// Create a new TransportHub with default buffer sizes.
     pub fn new() -> Self {
-        let (tx, _rx) = broadcast::channel::<ServerMessage>(256);
+        Self::with_config(TransportHubConfig::default())
+    }
+
+    /// Create a new TransportHub with custom buffer sizes.
+    pub fn with_config(config: TransportHubConfig) -> Self {
+        let (tx, _rx) = broadcast::channel::<ServerMessage>(config.global_broadcast_buffer);
         TransportHub {
             tx,
             topics: Arc::new(RwLock::new(HashMap::new())),
             users: Arc::new(RwLock::new(HashMap::new())),
+            config,
         }
     }
 
     // ---------- global client broadcast ----------
 
-    /// Subscribe to the broadcast (call from SSE/WS handlers).
+    /// Subscribe to the global broadcast.
+    /// Call from SSE/WS handlers to receive messages sent via `broadcast_html()`, etc.
     pub fn subscribe(&self) -> broadcast::Receiver<ServerMessage> {
         self.tx.subscribe()
     }
 
     /// Broadcast raw HTML to all connected clients.
+    /// Messages are tagged with category "ui".
     pub fn broadcast_html(&self, html: &str) {
         let _ = self.tx.send(ServerMessage {
             category: "ui".into(),
@@ -68,7 +133,8 @@ impl TransportHub {
         });
     }
 
-    /// Broadcast a raw data message.
+    /// Broadcast a raw data message to all connected clients.
+    /// Messages are tagged with category "data".
     pub fn broadcast_data(&self, data: &str) {
         let _ = self.tx.send(ServerMessage {
             category: "data".into(),
@@ -77,50 +143,115 @@ impl TransportHub {
         });
     }
 
-    /// Broadcast a generic ServerMessage.
+    /// Broadcast a generic ServerMessage to all connected clients.
     pub fn broadcast(&self, msg: ServerMessage) {
         let _ = self.tx.send(msg);
     }
 
     // ---------- topic‑based pub/sub ----------
 
-    /// Publish a string message to a topic. Creates the topic if it doesn't exist.
-    pub fn publish(&self, topic: &str, message: String) {
-        let mut topics = self.topics.write().unwrap();
+    /// Publish a string message to a topic.
+    /// Creates the topic channel if it doesn't already exist.
+    /// Returns Ok if the message was sent, Err if all subscribers are gone.
+    pub fn publish(&self, topic: &str, message: String) -> Result<(), BroadcastError> {
+        let mut topics = self
+            .topics
+            .write()
+            .map_err(|_| BroadcastError::HubPoisoned)?;
+
         let sender = topics.entry(topic.to_string()).or_insert_with(|| {
-            let (tx, _rx) = broadcast::channel::<String>(64);
+            let (tx, _rx) = broadcast::channel::<String>(self.config.topic_buffer);
             tx
         });
-        let _ = sender.send(message);
+
+        sender
+            .send(message)
+            .map_err(|_| BroadcastError::NoReceivers)?;
+
+        Ok(())
     }
 
     /// Subscribe to a topic. If the topic doesn't exist yet, create its channel.
-    /// Returns a receiver that will receive future messages.
-    pub fn subscribe_topic(&self, topic: &str) -> broadcast::Receiver<String> {
-        let mut topics = self.topics.write().unwrap();
+    /// Returns a receiver that will receive future messages on that topic.
+    pub fn subscribe_topic(
+        &self,
+        topic: &str,
+    ) -> Result<broadcast::Receiver<String>, BroadcastError> {
+        let mut topics = self
+            .topics
+            .write()
+            .map_err(|_| BroadcastError::HubPoisoned)?;
+
         let sender = topics.entry(topic.to_string()).or_insert_with(|| {
-            let (tx, _rx) = broadcast::channel::<String>(64);
+            let (tx, _rx) = broadcast::channel::<String>(self.config.topic_buffer);
             tx
         });
-        sender.subscribe()
+
+        Ok(sender.subscribe())
     }
 
-    /// Register a user (or replace existing) and return a personal receiver for direct messages.
-    pub fn register_user(&self, user_id: &str) -> broadcast::Receiver<ServerMessage> {
-        let (tx, rx) = broadcast::channel::<ServerMessage>(64);
-        self.users.write().unwrap().insert(user_id.to_string(), tx);
-        rx
+    // ---------- per-user direct messaging ----------
+
+    /// Register a user connection and return a receiver for direct messages.
+    /// A connection ID is automatically generated to track this specific connection,
+    /// allowing the same user to have multiple simultaneous connections.
+    ///
+    /// The returned `ConnectionHandle` should be kept in scope for the lifetime of the connection.
+    /// When dropped, it automatically unregisters the connection.
+    pub fn register_user(
+        &self,
+        user_id: &str,
+    ) -> Result<(broadcast::Receiver<ServerMessage>, ConnectionHandle), BroadcastError> {
+        let (tx, rx) = broadcast::channel::<ServerMessage>(self.config.user_buffer);
+        let connection_id = Uuid::new_v4();
+
+        let mut users = self
+            .users
+            .write()
+            .map_err(|_| BroadcastError::HubPoisoned)?;
+
+        users.insert((user_id.to_string(), connection_id), tx);
+
+        let handle = ConnectionHandle {
+            user_id: user_id.to_string(),
+            connection_id,
+            hub: Arc::new(self.clone()),
+        };
+
+        Ok((rx, handle))
     }
 
-    /// Remove a user's personal sender, stopping further direct messages.
-    pub fn unregister_user(&self, user_id: &str) {
-        self.users.write().unwrap().remove(user_id);
+    /// Unregister a specific user connection by ID.
+    /// This is called automatically when a ConnectionHandle is dropped.
+    fn unregister_connection(&self, user_id: &str, connection_id: Uuid) {
+        if let Ok(mut users) = self.users.write() {
+            users.remove(&(user_id.to_string(), connection_id));
+            tracing::debug!(
+                "Unregistered connection {} for user {}",
+                connection_id,
+                user_id
+            );
+        } else {
+            tracing::warn!("Failed to unregister connection: hub poisoned");
+        }
     }
 
-    /// Send a message directly to a specific user.
+    /// Send a message directly to all connections of a specific user.
     pub fn direct_to_user(&self, user_id: &str, msg: ServerMessage) {
-        if let Some(tx) = self.users.read().unwrap().get(user_id) {
-            let _ = tx.send(msg);
+        if let Ok(users) = self.users.read() {
+            let mut sent_count = 0;
+            for ((uid, _), tx) in users.iter() {
+                if uid == user_id {
+                    if tx.send(msg.clone()).is_ok() {
+                        sent_count += 1;
+                    }
+                }
+            }
+            if sent_count == 0 {
+                tracing::debug!("No active connections for user {}", user_id);
+            }
+        } else {
+            tracing::warn!("Failed to send direct message: hub poisoned");
         }
     }
 
@@ -149,9 +280,44 @@ impl TransportHub {
     }
 }
 
+impl Default for TransportHub {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Error type for TransportHub operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BroadcastError {
+    /// All subscribers to the channel have been dropped.
+    NoReceivers,
+
+    /// The RwLock protecting the hub's state is poisoned (a thread panicked while holding it).
+    HubPoisoned,
+}
+
+impl std::fmt::Display for BroadcastError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoReceivers => write!(f, "No receivers for this message"),
+            Self::HubPoisoned => write!(f, "Hub state is poisoned"),
+        }
+    }
+}
+
+impl std::error::Error for BroadcastError {}
+
+// ---------- SSE Handler ----------
+
 /// SSE endpoint with optional intent filter.
-/// If no ?intent= query parameter is given, all message categories are sent.
-/// Example: /sse?intent=ui,notification
+///
+/// Requires authentication if `config.transport_auth_required` is true.
+/// If no `?intent=` query parameter is given, all message categories are sent.
+///
+/// Example: `/sse?intent=ui,notification`
+///
+/// Authenticated users receive both global broadcasts and personal direct messages.
+/// Unauthenticated connections (if allowed) receive only global broadcasts.
 pub async fn sse_handler(
     Extension(state): Extension<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
@@ -160,50 +326,107 @@ pub async fn sse_handler(
     // Try to authenticate user
     let user = crate::auth::User::from_headers(&headers, &state.jwt_secret);
 
+    // Enforce authentication if required
     if state.config.transport_auth_required && user.is_none() {
         return (StatusCode::UNAUTHORIZED, "Authentication required").into_response();
     }
 
-    // Determine if we should apply server‑side intent filtering.
+    // Determine if the encoder filters client-side
     let do_server_filter = !state.encoder.filters_client_side();
-    let intent_param = params.get("intent");
-    let do_filter = intent_param.is_some(); // filter only if ?intent is present
+
+    // Parse intent query parameter if provided
+    let intent_param = params.get("intent").cloned();
+    let do_filter = intent_param.is_some();
     let intents: HashSet<String> = intent_param
         .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
         .unwrap_or_default();
 
-    let global_rx = state.hub.subscribe();
-
-    let stream =
-        TokioStreamExt::filter_map(
-            BroadcastStream::new(global_rx),
-            move |result| match result {
-                Ok(msg) => {
-                    if do_server_filter && do_filter && intents.contains(&msg.category) {
-                        None
-                    } else {
-                        Some(Ok::<Event, std::convert::Infallible>(
-                            state.encoder.to_event(&msg),
-                        ))
-                    }
-                }
-                Err(_) => None,
-            },
-        );
-
-    Sse::new(stream)
-        .keep_alive(
-            KeepAlive::new()
-                .interval(Duration::from_secs(15))
-                .text("keep-alive"),
-        )
-        .into_response()
+    Sse::new(sse_stream(
+        state,
+        user,
+        do_server_filter,
+        do_filter,
+        intents,
+    ))
+    .keep_alive(
+        KeepAlive::new()
+            .interval(Duration::from_secs(15))
+            .text("keep-alive"),
+    )
+    .into_response()
 }
 
+/// Stream generator for SSE.
+/// Handles subscription to both global and personal channels, applies intent filtering,
+/// and yields events for the SSE response.
+///
+/// This is extracted as a separate function to:
+/// 1. Make the type explicit (`impl Stream<Item = Result<Event, Infallible>>`)
+/// 2. Reduce cognitive load in the handler
+/// 3. Allow reuse by other real-time endpoints
+/// 4. Improve testability
+fn sse_stream(
+    state: Arc<AppState>,
+    user: Option<crate::auth::User>,
+    do_server_filter: bool,
+    do_filter: bool,
+    intents: HashSet<String>,
+) -> impl futures::Stream<Item = Result<Event, Infallible>> {
+    async_stream::stream! {
+        // Subscribe to global broadcast
+        let mut global_rx = state.hub.subscribe();
+
+        // Register and subscribe to personal channel if authenticated
+        let mut personal_rx = if let Some(ref user) = user {
+            match state.hub.register_user(&user.id) {
+                Ok((rx, _handle)) => Some(rx),
+                Err(e) => {
+                    tracing::error!("Failed to register user for SSE: {}", e);
+                    yield Ok(Event::default().comment("failed to register for personal messages"));
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        loop {
+            let msg = if let Some(ref mut personal) = personal_rx {
+                tokio::select! {
+                    Ok(msg) = global_rx.recv() => msg,
+                    Ok(msg) = personal.recv() => msg,
+                    else => break,
+                }
+            } else {
+                match global_rx.recv().await {
+                    Ok(msg) => msg,
+                    Err(_) => break,
+                }
+            };
+
+            // Apply server-side intent filtering if requested
+            if do_server_filter && do_filter && !intents.contains(msg.category.as_str()) {
+                continue;
+            }
+
+            // Convert ServerMessage to SSE Event
+            let event = state.encoder.to_event(&msg);
+            yield Ok(event);
+        }
+    }
+}
+
+// ---------- WebSocket Handler ----------
+
 /// WebSocket endpoint with optional intent filter.
-/// If no ?intent= query parameter is given, all message categories are sent.
-/// Authenticated users (via JWT cookie/header) also receive personal messages.
-/// Sends raw HTML or data payloads – not JSON‑wrapped.
+///
+/// Requires authentication if `config.transport_auth_required` is true.
+/// If no `?intent=` query parameter is given, all message categories are sent.
+///
+/// Example: `/ws?intent=ui,notification`
+///
+/// Authenticated users receive both global broadcasts and personal direct messages.
+/// Unauthenticated connections (if allowed) receive only global broadcasts.
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     Extension(state): Extension<Arc<AppState>>,
@@ -233,6 +456,9 @@ pub async fn ws_handler(
     ws.on_upgrade(move |socket| handle_ws(socket, state, intents, do_filter, user))
 }
 
+/// Handle a WebSocket connection.
+/// Manages bidirectional communication: forwards hub messages to client,
+/// discards or logs client messages.
 async fn handle_ws(
     socket: WebSocket,
     state: Arc<AppState>,
@@ -245,26 +471,27 @@ async fn handle_ws(
     // Subscribe to global broadcast
     let mut global_rx = state.hub.subscribe();
 
-    // Register personal channel if authenticated
-    let mut personal_rx = user.as_ref().map(|u| state.hub.register_user(&u.id));
+    // Register and subscribe to personal channel if authenticated
+    let mut personal_rx = if let Some(ref user) = user {
+        match state.hub.register_user(&user.id) {
+            Ok((rx, _handle)) => Some(rx),
+            Err(e) => {
+                tracing::error!("Failed to register user for WebSocket: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     // Task to forward messages from hub to WebSocket
     let send_task = async move {
         loop {
             let msg = if let Some(ref mut personal) = personal_rx {
                 tokio::select! {
-                    global_msg = global_rx.recv() => {
-                        match global_msg {
-                            Ok(msg) => msg,
-                            Err(_) => break,
-                        }
-                    }
-                    personal_msg = personal.recv() => {
-                        match personal_msg {
-                            Ok(msg) => msg,
-                            Err(_) => break,
-                        }
-                    }
+                    Ok(msg) = global_rx.recv() => msg,
+                    Ok(msg) = personal.recv() => msg,
+                    else => break,
                 }
             } else {
                 match global_rx.recv().await {
@@ -274,7 +501,7 @@ async fn handle_ws(
             };
 
             // Apply intent filter
-            if do_filter && !intents.contains(&msg.category) {
+            if do_filter && !intents.contains(msg.category.as_str()) {
                 continue;
             }
 
@@ -288,16 +515,18 @@ async fn handle_ws(
             };
 
             // Send as a text frame
-            if sender.send(Message::Text(payload.into())).await.is_err() {
+            if let Err(e) = sender.send(Message::Text(payload.into())).await {
+                tracing::debug!("Failed to send WebSocket message: {}", e);
                 break;
             }
         }
     };
 
-    // Receive task – just discard incoming messages (or log them)
+    // Receive task – just discard incoming messages (or log them for future use)
     let recv_task = async {
         while let Some(Ok(_msg)) = futures::StreamExt::next(&mut receiver).await {
-            // optionally log or handle client->server messages here
+            // Optionally log or handle client->server messages here.
+            // For now, we discard them (bidirectional isn't needed for hub broadcasts).
         }
     };
 
@@ -307,8 +536,8 @@ async fn handle_ws(
         _ = recv_task => {},
     }
 
-    // Clean up personal sender if registered
-    if let Some(user) = user {
-        state.hub.unregister_user(&user.id);
-    }
+    tracing::debug!(
+        "WebSocket connection closed for user: {:?}",
+        user.as_ref().map(|u| &u.id)
+    );
 }

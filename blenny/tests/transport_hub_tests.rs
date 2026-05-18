@@ -15,7 +15,8 @@ async fn global_broadcast_reaches_subscriber() {
 #[tokio::test]
 async fn topic_pub_sub_works() {
     let hub = TransportHub::new();
-    let mut rx = hub.subscribe_topic("test.topic");
+    let mut rx = hub.subscribe_topic("test.topic")
+        .expect("Failed to subscribe to topic");
 
     hub.publish("test.topic", "hello".into());
 
@@ -26,7 +27,8 @@ async fn topic_pub_sub_works() {
 #[tokio::test]
 async fn topic_created_on_subscribe() {
     let hub = TransportHub::new();
-    let mut rx = hub.subscribe_topic("new.topic");
+    let mut rx = hub.subscribe_topic("new.topic")
+        .expect("Failed to subscribe to topic");
     // Must be able to publish and receive even though publish never called before
     hub.publish("new.topic", "first".into());
     let msg = rx.recv().await.unwrap();
@@ -36,8 +38,10 @@ async fn topic_created_on_subscribe() {
 #[tokio::test]
 async fn topic_multiple_subscribers_all_receive() {
     let hub = TransportHub::new();
-    let mut rx1 = hub.subscribe_topic("multi");
-    let mut rx2 = hub.subscribe_topic("multi");
+    let mut rx1 = hub.subscribe_topic("multi")
+        .expect("Failed to subscribe to topic");
+    let mut rx2 = hub.subscribe_topic("multi")
+        .expect("Failed to subscribe to topic");
 
     hub.publish("multi", "broadcast".into());
 
