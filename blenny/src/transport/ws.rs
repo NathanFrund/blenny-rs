@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use crate::app_state::AppState;
 
-use super::select_message;
+use super::{parse_intents, select_message};
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -19,16 +19,7 @@ pub async fn ws_handler(
     Query(params): Query<HashMap<String, String>>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    let do_server_filter = !state.encoder.filters_client_side();
-    let intents: HashSet<String> = if do_server_filter {
-        params
-            .get("intent")
-            .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
-            .unwrap_or_default()
-    } else {
-        HashSet::new()
-    };
-    let do_filter = params.contains_key("intent");
+    let (do_filter, intents) = parse_intents(&params);
 
     let mut user = crate::auth::User::from_headers(&headers, &state.jwt_secret);
 
