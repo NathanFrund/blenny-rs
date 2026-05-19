@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use crate::app_state::AppState;
 
-use super::select_message;
+use super::{parse_intents, select_message};
 
 pub async fn sse_handler(
     Extension(state): Extension<Arc<AppState>>,
@@ -34,12 +34,8 @@ pub async fn sse_handler(
         return (StatusCode::UNAUTHORIZED, "Authentication required").into_response();
     }
 
+    let (do_filter, intents) = parse_intents(&params);
     let do_server_filter = !state.encoder.filters_client_side();
-    let intent_param = params.get("intent").cloned();
-    let do_filter = intent_param.is_some();
-    let intents: HashSet<String> = intent_param
-        .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
-        .unwrap_or_default();
 
     Sse::new(sse_stream(
         state,
